@@ -624,6 +624,7 @@ export class CpSettings extends LitElement {
         <input type="number" step="0.1" .value=${String(s.heat_load ?? 6.2)} @change=${(e: Event) => this._patch({ heat_load: Number((e.target as HTMLInputElement).value) })} /></label>
       <div class="row foot">
         <span class="muted">${t("st.version")} ${this.version}</span>
+        <button class="ghost" @click=${() => emit(this, "show-credits")}>${icon("info")} ${t("st.about")}</button>
         <span class="spacer"></span>
         <button class="danger" @click=${() => confirm(t("st.reset_confirm")) && emit(this, "reset-plant")}>${t("st.reset")}</button>
       </div>

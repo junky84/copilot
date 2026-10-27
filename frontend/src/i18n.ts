@@ -685,6 +685,7 @@ const de: Record<string, string> = {
   "st.language": "Sprache",
   "st.lang.auto": "Wie Home Assistant",
   "st.version": "Version",
+  "st.about": "Über COPilot",
   "st.reset": "Anlage zurücksetzen",
   "st.reset_confirm": "Komplette Anlage löschen und mit der Beispielanlage neu starten?",
 };
@@ -1342,6 +1343,7 @@ const en: Record<string, string> = {
   "st.language": "Language",
   "st.lang.auto": "Same as Home Assistant",
   "st.version": "Version",
+  "st.about": "About COPilot",
   "st.reset": "Reset plant",
   "st.reset_confirm": "Delete the whole plant and start over with the example plant?",
 };

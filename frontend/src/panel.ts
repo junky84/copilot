@@ -14,6 +14,8 @@ import "./views/widgets";
 import "./views/efficiency";
 import "./views/check";
 import "./views/curve";
+import "./views/credits";
+import type { CpCredits } from "./views/credits";
 import "./card";
 
 type View = "overview" | "efficiency" | "check" | "curve" | "maintenance" | "messages" | "config";
@@ -94,6 +96,10 @@ export class CopilotPanel extends LitElement {
     lsSet(LS_VIEW, `${this._view}:${this._sub}`);
   }
 
+  private _openCredits(): void {
+    (this.renderRoot.querySelector("cp-credits") as CpCredits | null)?.open();
+  }
+
   private _fullscreen(): void {
     if (document.fullscreenElement) document.exitFullscreen();
     else this.requestFullscreen?.().catch(() => undefined);
@@ -107,7 +113,7 @@ export class CopilotPanel extends LitElement {
         ${this.narrow
           ? html`<button class="ghost icon" title=${t("menu")} @click=${() => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true }))}>${icon("menu")}</button>`
           : nothing}
-        <div class="brand">${logo}<span>COP<b>ilot</b></span></div>
+        <div class="brand" @click=${(e: MouseEvent) => e.detail === 3 && this._openCredits()}>${logo}<span>COP<b>ilot</b></span></div>
         <nav>
           ${(["overview", "efficiency", "check", "curve", "maintenance", "messages", "config"] as View[]).map(
             (v) => html`<button class="tab ${this._view === v ? "on" : ""}" title=${t(`nav.${v}`)} @click=${() => this._go(v)}>
@@ -127,6 +133,7 @@ export class CopilotPanel extends LitElement {
         ${!plant ? html`<div class="loading">${logo}</div>` : this._content(plant)}
       </main>
       ${this._toast ? html`<div class="toast">${this._toast}</div>` : nothing}
+      <cp-credits .plant=${plant} .src=${this._ctl.src} .version=${this._ctl.backendVersion}></cp-credits>
     </div>`;
   }
 
@@ -197,6 +204,7 @@ export class CopilotPanel extends LitElement {
           : nothing}
         ${this._sub === "settings"
           ? html`<cp-settings .plant=${plant} .hass=${this.hass} .api=${this._ctl.api} .version=${this._ctl.backendVersion} @save=${onSave}
+              @show-credits=${() => this._openCredits()}
               @plant-restored=${(e: CustomEvent) => {
                 this._ctl.setPlant(e.detail.plant, e.detail.rev);
                 this._showToast(t("bk.restored"));
@@ -237,7 +245,7 @@ export class CopilotPanel extends LitElement {
         top: 0;
         z-index: 5;
       }
-      .brand { display: flex; align-items: center; gap: 8px; font-size: 17px; letter-spacing: 0.2px; margin-right: 8px; }
+      .brand { display: flex; align-items: center; gap: 8px; font-size: 17px; letter-spacing: 0.2px; margin-right: 8px; user-select: none; }
       .brand b { font-weight: 800; }
       .logo { width: 26px; height: 26px; }
       nav { display: flex; gap: 4px; }

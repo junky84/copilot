@@ -134,5 +134,6 @@ This project is developed with substantial help from an AI coding assistant (Ant
 - EMS-ESP short names and unique-id formats are based on the [EMS-ESP](https://github.com/emsesp/EMS-ESP32) sources (v3.8.6).
 - Product names (Buderus, Bosch, Logatherm, Compress …) are trademarks of their owners and are used only to identify compatible devices.
 - The model list and the simulator use plausible values, not certified manufacturer data.
+- The pixel font VT323 in *About COPilot* is licensed under the SIL Open Font License 1.1 – see [VT323-OFL.txt](custom_components/copilot/VT323-OFL.txt).
 
 License: MIT
