@@ -118,6 +118,11 @@ def test_suggest_prefers_live_values_from_wlw186i():
     assert got[("pc1", "running")] == "binary_sensor.boiler_pc1on"
     assert got[("hc1", "heating_limit")] == "number.thermostat_summertemp"
     assert got[("hc1", "min_flow_temp")] == "number.thermostat_hc1_hpminflowtemp"
+    buf = suggest_bindings(
+        {"components": [{"id": "buf", "type": "buffer"}]},
+        {EmsKey("boiler", None, "curflowtemp"): "sensor.boiler_curflowtemp"},
+    )
+    assert buf[0]["entity_id"] == "sensor.boiler_curflowtemp"
     # without states the static order applies
     got = {(s["component_id"], s["slot"]): s["entity_id"] for s in suggest_bindings(plant, entities)}
     assert got[("hc1", "heating_limit")] == "number.thermostat_hc1_summertemp"

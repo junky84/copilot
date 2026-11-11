@@ -178,7 +178,8 @@ RULES: dict[tuple[str, str | None], dict[str, list[Cand]]] = {
         "position": [("boiler", "{dhw}", "3wayvalve"), ("boiler", None, "hpswitchvalve"), ("boiler", None, "hp3way")],
     },
     ("buffer", None): {
-        "temp_top": [("boiler", None, "headertemp")],
+        # heat pumps with a parallel buffer: T0 sits in the buffer and EMS-ESP reports it as curflowtemp
+        "temp_top": [("boiler", None, "headertemp"), ("boiler", None, "curflowtemp")],
     },
     ("dhw_tank", None): {
         "temp_top": [("boiler", "{dhw}", "curtemp"), ("boiler", None, "hptw1")],
