@@ -151,7 +151,8 @@ RULES: dict[tuple[str, str | None], dict[str, list[Cand]]] = {
         "heating_active": [("boiler", None, "heatingactive"), ("boiler", None, "hpheatingon")],
         # parts built into the indoor unit
         "pc0_running": [("boiler", None, "heatingpump"), ("boiler", None, "primepump")],
-        "pc0_speed": [("boiler", None, "primepumpmod"), ("boiler", None, "heatingpumpmod")],
+        # primepumpmod is a setting (number) on WLW186i, the live speed is heatingpumpmod / hpcircspd
+        "pc0_speed": [("boiler", None, "heatingpumpmod"), ("boiler", None, "hpcircspd"), ("boiler", None, "primepumpmod")],
         "vw1_position": [("boiler", "{dhw}", "3wayvalve"), ("boiler", None, "hpswitchvalve"), ("boiler", None, "hp3way")],
         "dhw_temp": [("boiler", "{dhw}", "curtemp"), ("boiler", None, "hptw1")],
         "dhw_setpoint": [("boiler", "{dhw}", "settemp"), ("boiler", "{dhw}", "seltemp")],
@@ -160,10 +161,11 @@ RULES: dict[tuple[str, str | None], dict[str, list[Cand]]] = {
     },
     ("pump", "primary"): {
         "running": [("boiler", None, "heatingpump"), ("boiler", None, "primepump")],
-        "speed": [("boiler", None, "primepumpmod"), ("boiler", None, "heatingpumpmod")],
+        "speed": [("boiler", None, "heatingpumpmod"), ("boiler", None, "hpcircspd"), ("boiler", None, "primepumpmod")],
         "flow": [("boiler", None, "pc0flow")],
     },
     ("pump", "secondary"): {
+        "running": [("boiler", None, "pc1on")],
         "flow": [("boiler", None, "pc1flow")],
     },
     ("pump", "circulation"): {
@@ -195,9 +197,9 @@ RULES: dict[tuple[str, str | None], dict[str, list[Cand]]] = {
         "operating_state": [("thermostat", "{hc}", "hpoperatingstate")],
         "design_temp": [("thermostat", "{hc}", "designtemp")],
         "offset_temp": [("thermostat", "{hc}", "offsettemp")],
-        "min_flow_temp": [("thermostat", "{hc}", "minflowtemp")],
         "max_flow_temp": [("thermostat", "{hc}", "maxflowtemp")],
         "min_ext_temp": [("thermostat", None, "minexttemp")],
+        "min_flow_temp": [("thermostat", "{hc}", "minflowtemp"), ("thermostat", "{hc}", "hpminflowtemp")],
         "heating_limit": [("thermostat", "{hc}", "summertemp"), ("thermostat", None, "summertemp")],
     },
     ("mixer", None): {
@@ -244,10 +246,29 @@ def collect_entities(
     return {key: entity_id for key, (_, entity_id) in found.items()}
 
 
+def _is_unset(state: str | None) -> bool:
+    """True for values EMS-ESP reports for parameters a controller does not use (0 or empty)."""
+    if state is None:
+        return False
+    if state in ("unknown", "unavailable", ""):
+        return True
+    try:
+        return float(state) == 0
+    except ValueError:
+        return False
+
+
 def suggest_bindings(
-    plant: dict[str, Any] | None, entities: dict[EmsKey, str]
+    plant: dict[str, Any] | None,
+    entities: dict[EmsKey, str],
+    states: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Suggest an entity for every slot of every component that has a rule."""
+    """Suggest an entity for every slot of every component that has a rule.
+
+    With ``states`` (entity_id -> state) a candidate reading 0 or unknown is
+    skipped when a later candidate has a real value, e.g. BC400 keeps the summer
+    threshold in the global ``summertemp`` while ``hc1/summertemp`` stays 0.
+    """
     suggestions: list[dict[str, Any]] = []
     for component in (plant or {}).get("components", []):
         model = str(component.get("model") or "")
@@ -255,20 +276,25 @@ def suggest_bindings(
             # built-in cylinder values only for units that have one (e.g. T180)
             if component.get("type") == "indoor_unit" and slot.startswith("dhw_") and "t180" not in model and "-m" not in model:
                 continue
+            hits: list[tuple[int, EmsKey, str]] = []
             for rank, (device, tag, short) in enumerate(candidates):
                 key = EmsKey(device, _resolve_tag(tag, component), short)
-                entity_id = entities.get(key)
-                if entity_id:
-                    suggestions.append(
-                        {
-                            "component_id": component.get("id"),
-                            "slot": slot,
-                            "entity_id": entity_id,
-                            "source_key": str(key),
-                            "confidence": "high" if rank == 0 else "medium",
-                        }
-                    )
-                    break
+                if entity_id := entities.get(key):
+                    hits.append((rank, key, entity_id))
+            if not hits:
+                continue
+            if states is not None:
+                hits.sort(key=lambda h: _is_unset(states.get(h[2])))  # stable: keeps rank order
+            rank, key, entity_id = hits[0]
+            suggestions.append(
+                {
+                    "component_id": component.get("id"),
+                    "slot": slot,
+                    "entity_id": entity_id,
+                    "source_key": str(key),
+                    "confidence": "high" if rank == 0 else "medium",
+                }
+            )
     return suggestions
 
 
@@ -283,5 +309,9 @@ def async_scan(hass: HomeAssistant, plant: dict[str, Any] | None, base: str | No
             ({"key": str(key), "entity_id": entity_id} for key, entity_id in entities.items()),
             key=lambda item: item["key"],
         ),
-        "suggestions": suggest_bindings(plant, entities),
+        "suggestions": suggest_bindings(
+            plant,
+            entities,
+            {eid: st.state for eid in entities.values() if (st := hass.states.get(eid)) is not None},
+        ),
     }

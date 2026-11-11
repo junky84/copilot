@@ -2663,6 +2663,7 @@ function Be(r, e) {
   let t = r.unit ?? po[e] ?? "";
   if (r.num === null) return { text: String(r.raw), unit: "" };
   let s = r.num;
+  if (e === "flow" && s < 0) return { text: c("none"), unit: "" };
   e === "power_w" && t === "W" && Math.abs(s) >= 1e3 && (s = s / 1e3, t = "kW");
   const i = e === "count" || e === "percent" || e === "flow" || e === "duration" || e === "power_w" && t === "W" || e === "energy" && s >= 100 ? 0 : 1;
   return { text: F(s, i), unit: t };
@@ -7704,7 +7705,7 @@ const Ft = class Ft extends te {
     super(...arguments), this._chartKey = "", this._costs = [], this._costKey = "", this.sim = null, this.version = 0, this._data = null, this._error = "", this._loadedAt = 0, this._loadedFor = null;
   }
   connectedCallback() {
-    super.connectedCallback(), Gi ??= import("./echart-DEtBuqzY.js").catch((e) => {
+    super.connectedCallback(), Gi ??= import("./echart-DUojncsk.js").catch((e) => {
       Gi = null, console.error("COPilot: chart module failed to load", e);
     });
   }
@@ -8408,7 +8409,7 @@ const Ut = class Ut extends te {
     })}></cp-echart>`;
   }
   connectedCallback() {
-    super.connectedCallback(), Xi ??= import("./echart-DEtBuqzY.js").catch((e) => {
+    super.connectedCallback(), Xi ??= import("./echart-DUojncsk.js").catch((e) => {
       Xi = null, console.error("COPilot: chart module failed to load", e);
     });
   }

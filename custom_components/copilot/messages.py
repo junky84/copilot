@@ -332,7 +332,9 @@ class MessageEngine:
                 # first time we see the value: remember it, do not alarm on old errors
                 self._save()
                 return
-            self._add(LEVEL_ERROR, "error_code", {**base, "code": new.state}, b.component_id)
+            # EMS-ESP shows the display code first; "--(nnnn)" is a status/info code, not a fault
+            level = LEVEL_NOTICE if new.state.startswith("--") else LEVEL_ERROR
+            self._add(level, "error_code", {**base, "code": new.state}, b.component_id)
 
     # ----------------------------------------------------- availability
 

@@ -85,3 +85,39 @@ def test_suggest_falls_back_to_second_candidate():
             "confidence": "medium",
         }
     ]
+
+
+def test_suggest_prefers_live_values_from_wlw186i():
+    """Real WLW186i/BC400 data: settings that read 0 must not win over live values."""
+    entities = {
+        EmsKey("boiler", None, "primepumpmod"): "number.boiler_primepumpmod",
+        EmsKey("boiler", None, "heatingpumpmod"): "sensor.boiler_heatingpumpmod",
+        EmsKey("boiler", None, "pc1on"): "binary_sensor.boiler_pc1on",
+        EmsKey("thermostat", "hc1", "summertemp"): "number.thermostat_hc1_summertemp",
+        EmsKey("thermostat", None, "summertemp"): "number.thermostat_summertemp",
+        EmsKey("thermostat", "hc1", "minflowtemp"): "number.thermostat_hc1_minflowtemp",
+        EmsKey("thermostat", "hc1", "hpminflowtemp"): "number.thermostat_hc1_hpminflowtemp",
+    }
+    states = {
+        "number.boiler_primepumpmod": "0",
+        "sensor.boiler_heatingpumpmod": "93",
+        "number.thermostat_hc1_summertemp": "0",
+        "number.thermostat_summertemp": "16",
+        "number.thermostat_hc1_minflowtemp": "0",
+        "number.thermostat_hc1_hpminflowtemp": "17",
+    }
+    plant = {
+        "components": [
+            {"id": "iu", "type": "indoor_unit"},
+            {"id": "pc1", "type": "pump", "props": {"role": "secondary"}},
+            {"id": "hc1", "type": "radiators"},
+        ]
+    }
+    got = {(s["component_id"], s["slot"]): s["entity_id"] for s in suggest_bindings(plant, entities, states)}
+    assert got[("iu", "pc0_speed")] == "sensor.boiler_heatingpumpmod"
+    assert got[("pc1", "running")] == "binary_sensor.boiler_pc1on"
+    assert got[("hc1", "heating_limit")] == "number.thermostat_summertemp"
+    assert got[("hc1", "min_flow_temp")] == "number.thermostat_hc1_hpminflowtemp"
+    # without states the static order applies
+    got = {(s["component_id"], s["slot"]): s["entity_id"] for s in suggest_bindings(plant, entities)}
+    assert got[("hc1", "heating_limit")] == "number.thermostat_hc1_summertemp"

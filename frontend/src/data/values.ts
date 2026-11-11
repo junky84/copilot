@@ -250,6 +250,8 @@ export function formatValue(v: SlotValue | undefined, kind: SlotKind): { text: s
   let unit = v.unit ?? DEFAULT_UNIT[kind] ?? "";
   if (v.num === null) return { text: String(v.raw), unit: "" };
   let num = v.num;
+  // EMS-ESP reports -1 l/h when a pump has no flow sensor (e.g. PC1)
+  if (kind === "flow" && num < 0) return { text: t("none"), unit: "" };
   if (kind === "power_w" && unit === "W" && Math.abs(num) >= 1000) {
     num = num / 1000;
     unit = "kW";
