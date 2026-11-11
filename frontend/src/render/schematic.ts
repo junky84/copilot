@@ -641,7 +641,8 @@ export class CpSchematic extends LitElement {
       (!pipe || blocks.every((b) => x + w <= b.x || x >= b.x + b.w || y + PILL_H <= b.y || y >= b.y + b.h));
     for (const c of byId.values()) {
       const shown = new Set(this._shownSlots(c));
-      for (const s of anchoredSlots(c)) {
+      const dhw = c.type === "indoor_unit" && componentFlags(c, this.src).has("b");
+      for (const s of anchoredSlots(c, dhw)) {
         if (!shown.has(s.key) || (!s.at && !s.pos)) continue;
         const w = this._pillWidth(c, s.key);
         if (c.valuePos?.[s.key] || (this._valueDrag?.id === c.id && this._valueDrag.slot === s.key)) {

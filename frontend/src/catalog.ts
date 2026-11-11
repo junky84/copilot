@@ -38,6 +38,8 @@ export interface PortDef {
   tempSlot?: string;
   fixedTemp?: number;
   kind?: PipeKind;
+  /** water only passes here in this VW1 position (a = heating, b = DHW); otherwise no temperature */
+  vw1?: "a" | "b";
 }
 
 /** A product variant with its own housing, connections and value positions. */
@@ -50,6 +52,8 @@ export interface VariantDef {
   pos?: Record<string, [number, number]>;
   /** anchors of values measured in a pipe */
   at?: Record<string, string>;
+  /** anchors used instead of `at` while VW1 is in the DHW position */
+  atDhw?: Record<string, string>;
   badges?: TypeDef["badges"];
 }
 
@@ -125,13 +129,14 @@ export const TYPES: Record<ComponentType, TypeDef> = {
         ports: [
           { id: "src_out", x: 2, y: 14, dir: "b", tempSlot: "return_temp", kind: "return" },
           { id: "src_in", x: 3, y: 14, dir: "b", tempSlot: "supply_temp", kind: "supply" },
-          { id: "dhw_sup", x: 5, y: 14, dir: "b", tempSlot: "supply_temp", kind: "supply" },
-          { id: "dhw_ret", x: 6, y: 14, dir: "b", tempSlot: "return_temp", kind: "return" },
-          { id: "ret", x: 8, y: 14, dir: "b", tempSlot: "return_temp", kind: "return" },
-          { id: "sup", x: 9, y: 14, dir: "b", tempSlot: "supply_temp", kind: "supply" },
+          { id: "dhw_sup", x: 5, y: 14, dir: "b", tempSlot: "supply_temp", kind: "supply", vw1: "b" },
+          { id: "dhw_ret", x: 6, y: 14, dir: "b", tempSlot: "return_temp", kind: "return", vw1: "b" },
+          { id: "ret", x: 8, y: 14, dir: "b", tempSlot: "return_temp", kind: "return", vw1: "a" },
+          { id: "sup", x: 9, y: 14, dir: "b", tempSlot: "supply_temp", kind: "supply", vw1: "a" },
         ],
         pos: { pressure: [1.9, 7.6], aux_level: [5.9, 4.2], pc0_speed: [4.3, 11.4] },
         at: { supply_temp: "sup", return_temp: "ret" },
+        atDhw: { supply_temp: "dhw_sup", return_temp: "dhw_ret" },
       },
       // floor-standing T180 with 180 l DHW cylinder: all connections on top (T180 manual, fig. 4/6),
       // from left: heating return, circulation, heating flow, DHW out, cold in, from heat pump, to heat pump
@@ -141,9 +146,9 @@ export const TYPES: Record<ComponentType, TypeDef> = {
         h: 22,
         badges: "right",
         ports: [
-          { id: "ret", x: 1, y: 0, dir: "t", tempSlot: "return_temp", kind: "return" },
+          { id: "ret", x: 1, y: 0, dir: "t", tempSlot: "return_temp", kind: "return", vw1: "a" },
           { id: "circ", x: 2, y: 0, dir: "t", kind: "circulation" },
-          { id: "sup", x: 3, y: 0, dir: "t", tempSlot: "supply_temp", kind: "supply" },
+          { id: "sup", x: 3, y: 0, dir: "t", tempSlot: "supply_temp", kind: "supply", vw1: "a" },
           { id: "dhw_hot", x: 4, y: 0, dir: "t", tempSlot: "dhw_temp", kind: "dhw_hot" },
           { id: "dhw_cold", x: 5, y: 0, dir: "t", kind: "dhw_cold" },
           { id: "src_in", x: 6, y: 0, dir: "t", tempSlot: "supply_temp", kind: "supply" },
@@ -151,6 +156,7 @@ export const TYPES: Record<ComponentType, TypeDef> = {
         ],
         pos: { pressure: [3.2, 8.8], aux_level: [6.4, 3.2], pc0_speed: [4.2, 7.4], dhw_temp: [4, 12], dhw_setpoint: [4, 17] },
         at: { supply_temp: "sup", return_temp: "ret" },
+        atDhw: { supply_temp: "src_in", return_temp: "src_out" },
       },
       // floor-standing TP70 with 70 l buffer: all connections on top (TP70 manual, fig. 4)
       tp70: {
@@ -165,8 +171,8 @@ export const TYPES: Record<ComponentType, TypeDef> = {
           { id: "ret2", x: 4, y: 0, dir: "t", kind: "return" },
           { id: "src_in", x: 5, y: 0, dir: "t", tempSlot: "supply_temp", kind: "supply" },
           { id: "src_out", x: 6, y: 0, dir: "t", tempSlot: "return_temp", kind: "return" },
-          { id: "dhw_sup", x: 7, y: 0, dir: "t", tempSlot: "supply_temp", kind: "supply" },
-          { id: "dhw_ret", x: 8, y: 0, dir: "t", tempSlot: "return_temp", kind: "return" },
+          { id: "dhw_sup", x: 7, y: 0, dir: "t", tempSlot: "supply_temp", kind: "supply", vw1: "b" },
+          { id: "dhw_ret", x: 8, y: 0, dir: "t", tempSlot: "return_temp", kind: "return", vw1: "b" },
         ],
         pos: { pressure: [7, 14.65], aux_level: [3.6, 3], pc0_speed: [7.6, 8.75], pc1_speed: [3.6, 4.9], buffer_temp: [4.5, 10.9] },
         at: { supply_temp: "src_in", return_temp: "src_out" },
@@ -180,13 +186,14 @@ export const TYPES: Record<ComponentType, TypeDef> = {
         ports: [
           { id: "src_in", x: 1, y: 0, dir: "t", kind: "supply" },
           { id: "src_out", x: 2, y: 0, dir: "t", kind: "return" },
-          { id: "dhw_sup", x: 4, y: 0, dir: "t", tempSlot: "supply_temp", kind: "supply" },
-          { id: "dhw_ret", x: 5, y: 0, dir: "t", tempSlot: "return_temp", kind: "return" },
-          { id: "ret", x: 6, y: 0, dir: "t", tempSlot: "return_temp", kind: "return" },
-          { id: "sup", x: 7, y: 0, dir: "t", tempSlot: "supply_temp", kind: "supply" },
+          { id: "dhw_sup", x: 4, y: 0, dir: "t", tempSlot: "supply_temp", kind: "supply", vw1: "b" },
+          { id: "dhw_ret", x: 5, y: 0, dir: "t", tempSlot: "return_temp", kind: "return", vw1: "b" },
+          { id: "ret", x: 6, y: 0, dir: "t", tempSlot: "return_temp", kind: "return", vw1: "a" },
+          { id: "sup", x: 7, y: 0, dir: "t", tempSlot: "supply_temp", kind: "supply", vw1: "a" },
         ],
         pos: { pressure: [2.2, 12.8], aux_level: [4, 3], pc0_speed: [5.5, 13.2] },
         at: { supply_temp: "sup", return_temp: "ret" },
+        atDhw: { supply_temp: "dhw_sup", return_temp: "dhw_ret" },
       },
     },
     slots: [
@@ -505,9 +512,10 @@ export function badgesOf(c: PlantComponent): TypeDef["badges"] {
 }
 
 /** Slot definitions with the anchors of the component's variant applied. */
-export function anchoredSlots(c: PlantComponent): SlotDef[] {
+export function anchoredSlots(c: PlantComponent, dhw = false): SlotDef[] {
   const v = variantOf(c);
-  return slotsOf(c).map((s) => (v ? { ...s, pos: v.pos?.[s.key] ?? s.pos, at: v.at?.[s.key] ?? s.at } : s));
+  const at = (dhw && v?.atDhw) || v?.at;
+  return slotsOf(c).map((s) => (v ? { ...s, pos: v.pos?.[s.key] ?? s.pos, at: at?.[s.key] ?? v.at?.[s.key] ?? s.at } : s));
 }
 
 export function sizeOf(c: PlantComponent): { w: number; h: number } {

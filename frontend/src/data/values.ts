@@ -176,6 +176,8 @@ export function pipeTemps(plant: Plant, src: ValueSource): Map<string, number> {
     const pos = portPos(c, ref.p);
     if (!pos) return undefined;
     if (pos.def.fixedTemp !== undefined) return pos.def.fixedTemp;
+    // TC0/TC1 sit before VW1: their values only belong to the branch VW1 is switched to
+    if (pos.def.vw1 && !componentFlags(c, src).has(pos.def.vw1)) return undefined;
     if (pos.def.tempSlot) {
       const v = src.get(c, pos.def.tempSlot);
       if (v?.available && v.num !== null) return v.num;
