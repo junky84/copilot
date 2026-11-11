@@ -642,10 +642,13 @@ export class CpSchematic extends LitElement {
     for (const c of byId.values()) {
       const shown = new Set(this._shownSlots(c));
       const dhw = c.type === "indoor_unit" && componentFlags(c, this.src).has("b");
+      const normalAt = new Map(anchoredSlots(c).map((s) => [s.key, s.at]));
       for (const s of anchoredSlots(c, dhw)) {
         if (!shown.has(s.key) || (!s.at && !s.pos)) continue;
         const w = this._pillWidth(c, s.key);
-        if (c.valuePos?.[s.key] || (this._valueDrag?.id === c.id && this._valueDrag.slot === s.key)) {
+        // a hand-placed value belongs to its normal pipe; while VW1 moves it to another pipe, place it there automatically
+        const moved = s.at !== normalAt.get(s.key);
+        if ((c.valuePos?.[s.key] && !moved) || (this._valueDrag?.id === c.id && this._valueDrag.slot === s.key)) {
           placed.push({ c, slot: s.key, ...this._valueAt(c, s.key, 0, 0), w });
           continue;
         }
