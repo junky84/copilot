@@ -27,6 +27,9 @@ const PARAMS: { key: keyof CurveParams; slot: string; min: number; max: number; 
 ];
 
 const DAYS = 14;
+/** longest range when a start time is set */
+const MAX_DAYS = 90;
+const DAY = 86400_000;
 // chart range
 const X0 = -20;
 const X1 = 22;
@@ -48,6 +51,7 @@ export class CpCurve extends LitElement {
     _hc: { state: true },
     _msg: { state: true },
     _confirm: { state: true },
+    _restart: { state: true },
   };
   plant!: Plant;
   src!: ValueSource;
@@ -60,6 +64,7 @@ export class CpCurve extends LitElement {
   private _hc = "";
   private _msg = "";
   private _confirm = false;
+  private _restart: string | null = null;
   private _loadedFor: unknown = null;
 
   private get _circuits(): PlantComponent[] {
@@ -91,8 +96,34 @@ export class CpCurve extends LitElement {
     return !!entity && /^(number|input_number)\./.test(entity) && this.admin;
   }
 
+  /** Start of the measurement range set by the user (null = last DAYS days). */
+  private get _since(): Date | null {
+    const iso = this._circuit && this.plant.settings.curve_since?.[this._circuit.id];
+    const d = iso ? new Date(iso) : null;
+    return d && !isNaN(d.getTime()) && !this.sim ? d : null;
+  }
+
+  /** Measurement range: [start, now]. */
+  private _range(now: Date): { start: Date; span: number } {
+    const since = this._since;
+    const start = since ? new Date(Math.max(since.getTime(), now.getTime() - MAX_DAYS * DAY)) : new Date(now.getTime() - DAYS * DAY);
+    return { start, span: Math.max(now.getTime() - start.getTime(), 3600_000) };
+  }
+
+  private _saveSince(iso: string | null) {
+    const hc = this._circuit;
+    if (!hc) return;
+    const plant: Plant = structuredClone(this.plant);
+    const map = { ...(plant.settings.curve_since || {}) };
+    if (iso) map[hc.id] = iso;
+    else delete map[hc.id];
+    plant.settings = { ...plant.settings, curve_since: map };
+    this._restart = null;
+    this.dispatchEvent(new CustomEvent("save", { detail: plant, bubbles: true, composed: true }));
+  }
+
   protected willUpdate(): void {
-    const key = `${this.sim ? "sim" : "ha"}:${this._circuit?.id}`;
+    const key = `${this.sim ? "sim" : "ha"}:${this._circuit?.id}:${this._since?.getTime() ?? ""}`;
     if (key !== this._loadedFor) {
       this._loadedFor = key;
       this._load();
@@ -157,7 +188,7 @@ export class CpCurve extends LitElement {
     };
     if (!ids.out || !ids.flow || !this.hass) return [];
     const now = new Date();
-    const start = new Date(now.getTime() - DAYS * 86400_000);
+    const { start, span } = this._range(now);
     const res = await this.hass.callWS<Record<string, { start: number; mean?: number | null }[]>>({
       type: "recorder/statistics_during_period",
       start_time: start.toISOString(),
@@ -179,7 +210,7 @@ export class CpCurve extends LitElement {
       // with a heat output statistic, only hours in which the heat pump actually heated
       const q = heat.get(ts);
       if (heat.size && (q == null || q < 0.3)) continue;
-      pts.push({ tOut, flow: f, room: room.get(ts) ?? undefined, age: (now.getTime() - ts) / (DAYS * 86400_000) });
+      pts.push({ tOut, flow: f, room: room.get(ts) ?? undefined, age: Math.min(1, (now.getTime() - ts) / span) });
     }
     return pts;
   }
@@ -273,7 +304,7 @@ export class CpCurve extends LitElement {
       },
       series: [
         {
-          name: t("cv.points", { days: DAYS }),
+          name: this._pointsLabel(),
           type: "scatter",
           symbolSize: 6,
           z: 1,
@@ -332,6 +363,20 @@ export class CpCurve extends LitElement {
     });
   }
 
+  private _pointsLabel(): string {
+    const since = this._since;
+    if (!since) return t("cv.points", { days: DAYS });
+    const date = since.toLocaleString(undefined, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    return t("cv.points_since", { date });
+  }
+
+  /** now as value for <input type="datetime-local"> */
+  private _localNow(): string {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 16);
+  }
+
   render() {
     const cur = this._current();
     const edited = Object.keys(this._edit).length > 0;
@@ -356,11 +401,17 @@ export class CpCurve extends LitElement {
             <span class="spacer"></span>
             <span class="lg"><i class="l-curve"></i>${t("cv.curve")}</span>
             ${next ? html`<span class="lg"><i class="l-next"></i>${t("cv.preview")}</span>` : nothing}
-            <span class="lg"><i class="l-pt"></i>${t("cv.points", { days: DAYS })}</span>
+            <span class="lg"><i class="l-pt"></i>${this._pointsLabel()}</span>
             <span class="lg"><i class="l-live"></i>${t("cv.now")}</span>
           </div>
           ${this._chart(cur, next, pts)}
           ${this.sim ? html`<p class="muted small">${t("cv.demo_note")}</p>` : nothing}
+          ${!this.sim && this.admin
+            ? html`<div class="row since">
+                <button class="small-btn" @click=${() => (this._restart = this._localNow())}>${icon("rotate")} ${t("cv.restart")}</button>
+                ${this._since ? html`<button class="small-btn" @click=${() => this._saveSince(null)}>${t("cv.show_all", { days: DAYS })}</button>` : nothing}
+              </div>`
+            : nothing}
           ${!this.sim && this._points && !pts.length ? html`<p class="muted small">${t("cv.no_points")}</p>` : nothing}
         </div>
         <div class="side">
@@ -400,6 +451,20 @@ export class CpCurve extends LitElement {
           </div>
         </div>
       </div>
+      ${this._restart !== null
+        ? html`<div class="backdrop" @click=${() => (this._restart = null)}></div>
+            <div class="dialog card">
+              <h3>${t("cv.restart_title")}</h3>
+              <p class="small">${t("cv.restart_text")}</p>
+              <label class="small">${t("cv.restart_from")}
+                <input type="datetime-local" .value=${this._restart}
+                  @input=${(e: Event) => (this._restart = (e.target as HTMLInputElement).value)} /></label>
+              <div class="row"><span class="spacer"></span>
+                <button @click=${() => (this._restart = null)}>${t("cancel")}</button>
+                <button class="primary" ?disabled=${!this._restart}
+                  @click=${() => this._saveSince(new Date(this._restart!).toISOString())}>${t("apply")}</button></div>
+            </div>`
+        : nothing}
       ${this._confirm
         ? html`<div class="backdrop" @click=${() => (this._confirm = false)}></div>
             <div class="dialog card">
@@ -453,6 +518,8 @@ export class CpCurve extends LitElement {
       .ok { color: var(--cp-accent); }
       .hint { font-size: 13px; line-height: 1.45; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--cp-warn) 12%, var(--cp-surface-2)); display: grid; gap: 8px; }
       .small-btn { justify-self: start; padding: 4px 10px; font-size: 12px; }
+      .since { gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+      .dialog input[type="datetime-local"] { display: block; margin-top: 4px; }
       .backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); z-index: 40; }
       .dialog { position: fixed; z-index: 41; left: 50%; top: 30%; transform: translate(-50%, -30%); width: min(420px, 92vw); }
       .dialog h3 { margin-top: 0; color: var(--cp-text); text-transform: none; letter-spacing: 0; font-size: 16px; }

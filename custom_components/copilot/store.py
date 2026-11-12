@@ -39,9 +39,10 @@ _MAGIC = {
 
 
 def _without_maintenance(plant: dict[str, Any]) -> dict[str, Any]:
-    """Plant without the maintenance log: ticking off a task is no reason for a backup."""
+    """Plant without the maintenance log and view state: ticking off a task is no reason for a backup."""
     settings = dict(plant.get("settings") or {})
     settings.pop("maintenance", None)
+    settings.pop("curve_since", None)
     return {**plant, "settings": settings}
 
 

@@ -142,6 +142,8 @@ export interface PlantSettings {
   write_non_admin?: boolean;
   /** layout changed by hand in the editor: never regenerate it automatically */
   layout_edited?: boolean;
+  /** heating curve view: show measurements only from this point on (circuit id → ISO time) */
+  curve_since?: Record<string, string>;
   /** last wizard answers, to reopen the wizard pre-filled */
   wizard?: any;
 }

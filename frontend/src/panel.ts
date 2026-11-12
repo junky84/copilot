@@ -167,7 +167,8 @@ export class CopilotPanel extends LitElement {
       return html`<cp-check .plant=${plant} .src=${src} .sim=${this._ctl.sim} .version=${this._ctl.version}></cp-check>`;
     }
     if (this._view === "curve") {
-      return html`<cp-curve .plant=${plant} .src=${src} .hass=${this.hass} .sim=${this._ctl.sim} .version=${this._ctl.version} ?admin=${this._ctl.admin}></cp-curve>`;
+      return html`<cp-curve .plant=${plant} .src=${src} .hass=${this.hass} .sim=${this._ctl.sim} .version=${this._ctl.version} ?admin=${this._ctl.admin}
+        @save=${(e: CustomEvent) => this._save(e.detail)}></cp-curve>`;
     }
     if (this._view === "maintenance") {
       return html`<cp-maintenance .plant=${plant} ?admin=${this._ctl.admin} @save=${(e: CustomEvent) => this._save(e.detail)}></cp-maintenance>`;
