@@ -12,5 +12,3 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # not (yet) listed in home-assistant/brands
-          ignore: brands
