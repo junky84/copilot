@@ -5339,13 +5339,14 @@ const Te = class Te extends st {
   _editOverlays(t, e) {
     const s = [];
     for (const n of t.values())
-      for (const o of Vt(n)) {
-        const a = yt(n, o.id);
-        if (!a) continue;
-        const l = this._connect?.c === n.id && this._connect.p === o.id, d = n.type === "junction" ? { l: -7, r: 7, t: 0, b: 0 }[a.dir] ?? 0 : 0, p = n.type === "junction" ? { t: -7, b: 7, l: 0, r: 0 }[a.dir] ?? 0 : 0;
-        s.push(S`<circle class="port ${l ? "src" : ""} ${this._connect ? "target" : ""}" cx=${a.x * $ + d} cy=${a.y * $ + p} r=${n.type === "junction" ? 4 : 6}
+      if (!(n.type === "junction" && !this._connect && !(this.selected?.kind === "c" && this.selected.id === n.id)))
+        for (const o of Vt(n)) {
+          const a = yt(n, o.id);
+          if (!a) continue;
+          const l = this._connect?.c === n.id && this._connect.p === o.id, d = n.type === "junction" ? { l: -7, r: 7, t: 0, b: 0 }[a.dir] ?? 0 : 0, p = n.type === "junction" ? { t: -7, b: 7, l: 0, r: 0 }[a.dir] ?? 0 : 0;
+          s.push(S`<circle class="port ${l ? "src" : ""} ${this._connect ? "target" : ""}" cx=${a.x * $ + d} cy=${a.y * $ + p} r=${n.type === "junction" ? 4 : 6}
           @pointerdown=${(h) => this._onPortDown(h, { c: n.id, p: o.id })}><title>${o.id}</title></circle>`);
-      }
+        }
     const i = [];
     if (this.selected?.kind === "p") {
       const n = this.selected.id, o = e.find((a) => a.pipe.id === n)?.route;
@@ -7720,7 +7721,7 @@ const Fe = class Fe extends st {
     super(...arguments), this._chartKey = "", this._costs = [], this._costKey = "", this.sim = null, this.version = 0, this._data = null, this._error = "", this._loadedAt = 0, this._loadedFor = null;
   }
   connectedCallback() {
-    super.connectedCallback(), Gi ??= import("./echart-s9UWoyQ2.js").catch((t) => {
+    super.connectedCallback(), Gi ??= import("./echart-ClGzWTJI.js").catch((t) => {
       Gi = null, console.error("COPilot: chart module failed to load", t);
     });
   }
@@ -8440,7 +8441,7 @@ const Ue = class Ue extends st {
     })}></cp-echart>`;
   }
   connectedCallback() {
-    super.connectedCallback(), Ji ??= import("./echart-s9UWoyQ2.js").catch((t) => {
+    super.connectedCallback(), Ji ??= import("./echart-ClGzWTJI.js").catch((t) => {
       Ji = null, console.error("COPilot: chart module failed to load", t);
     });
   }
