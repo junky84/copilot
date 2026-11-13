@@ -757,6 +757,9 @@ export class CpSchematic extends LitElement {
   private _editOverlays(byId: Map<string, PlantComponent>, routes: { pipe: any; route: { pts: Pt[]; horizontalStart: boolean } | null }[]): SVGTemplateResult {
     const ports: SVGTemplateResult[] = [];
     for (const c of byId.values()) {
+      // a junction's four ports would cover its own tiny hit area, so it could not be selected
+      // (and therefore not deleted): show them only while it is selected or a pipe is being drawn
+      if (c.type === "junction" && !this._connect && !(this.selected?.kind === "c" && this.selected.id === c.id)) continue;
       for (const p of portsOf(c)) {
         const pos = portPos(c, p.id);
         if (!pos) continue;
