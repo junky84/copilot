@@ -208,10 +208,14 @@ export class CpOverview extends LitElement {
       <button class="icon" title=${tm.playing ? t("tm.pause") : t("tm.play")} @click=${this._play}>${icon(tm.playing ? "pause" : "play")}</button>
       <div class="tm-track">
         <input type="range" min=${start} max=${s.to} step="60" .value=${String(s.t)}
+          style="--tm-fill:${(((s.t - start) / Math.max(1, s.to - start)) * 100).toFixed(2)}%"
           @input=${(e: Event) => this._seek(Number((e.target as HTMLInputElement).value))} aria-label=${t("tm.title")} />
-        <svg class="strip" viewBox="0 0 1 1" preserveAspectRatio="none">
-          ${tm.strip.map((p) => svg`<rect x=${p.x} y="0" width=${p.w + 0.001} height="1" fill=${MODE[p.mode] ?? "#8b949e"} />`)}
-        </svg>
+        <div class="strip-wrap">
+          <svg class="strip" viewBox="0 0 1 1" preserveAspectRatio="none">
+            ${tm.strip.map((p) => svg`<rect x=${p.x} y="0" width=${p.w + 0.001} height="1" fill=${MODE[p.mode] ?? "#8b949e"} />`)}
+          </svg>
+          <i class="strip-mark" style="left:${(Math.max(0, Math.min(1, (s.t - start) / Math.max(1, s.to - start))) * 100).toFixed(3)}%"></i>
+        </div>
       </div>
       <span class="tm-time">${label}</span>
       <select title=${t("tm.speed")} @change=${(e: Event) => (this._tm = { ...tm, speed: Number((e.target as HTMLSelectElement).value) })}>
@@ -507,6 +511,16 @@ export class CpOverview extends LitElement {
         border: 1px solid color-mix(in srgb, var(--cp-accent) 45%, var(--cp-border)); backdrop-filter: blur(8px); }
       .tm-track { flex: 1; min-width: 180px; display: grid; gap: 3px; }
       .tm-track input { width: 100%; margin: 0; accent-color: var(--cp-accent); }
+      /* own thumb with a known width, so the strip below can be inset to exactly its travel */
+      .tm-track input::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 20px; border-radius: 7px; background: #fff; border: 2px solid var(--cp-accent); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5); cursor: grab; margin-top: -7px; }
+      .tm-track input::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: linear-gradient(var(--cp-accent), var(--cp-accent)) 0 / var(--tm-fill, 0%) 100% no-repeat, var(--cp-border); }
+      .tm-track input { -webkit-appearance: none; appearance: none; background: transparent; height: 20px; }
+      .tm-track input::-moz-range-thumb { width: 10px; height: 16px; border-radius: 7px; background: #fff; border: 2px solid var(--cp-accent); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5); }
+      .tm-track input::-moz-range-track { height: 6px; border-radius: 3px; background: var(--cp-border); }
+      .tm-track input::-moz-range-progress { height: 6px; border-radius: 3px; background: var(--cp-accent); }
+      .strip-wrap { position: relative; margin: 0 7px; }
+      .strip-mark { position: absolute; top: -4px; bottom: -4px; width: 3px; margin-left: -1.5px; border-radius: 2px; background: #fff;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7), 0 0 6px rgba(255, 255, 255, 0.6); pointer-events: none; }
       .strip { width: 100%; height: 6px; border-radius: 3px; background: var(--cp-border); display: block; }
       .tm-time { font-weight: 800; font-variant-numeric: tabular-nums; min-width: 128px; }
       .tm select { width: auto; padding: 4px 8px; font-size: 12px; }

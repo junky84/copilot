@@ -1,4 +1,4 @@
-import { C as e } from "./chunks/panel-XuTwuA9a.js";
+import { C as e } from "./chunks/panel-Uetxz2tW.js";
 export {
   e as CopilotPanel
 };

@@ -7673,10 +7673,14 @@ const Qt = class Qt extends se {
       <button class="icon" title=${e.playing ? l("tm.pause") : l("tm.play")} @click=${this._play}>${L(e.playing ? "pause" : "play")}</button>
       <div class="tm-track">
         <input type="range" min=${s} max=${t.to} step="60" .value=${String(t.t)}
+          style="--tm-fill:${((t.t - s) / Math.max(1, t.to - s) * 100).toFixed(2)}%"
           @input=${(a) => this._seek(Number(a.target.value))} aria-label=${l("tm.title")} />
-        <svg class="strip" viewBox="0 0 1 1" preserveAspectRatio="none">
-          ${e.strip.map((a) => S`<rect x=${a.x} y="0" width=${a.w + 1e-3} height="1" fill=${o[a.mode] ?? "#8b949e"} />`)}
-        </svg>
+        <div class="strip-wrap">
+          <svg class="strip" viewBox="0 0 1 1" preserveAspectRatio="none">
+            ${e.strip.map((a) => S`<rect x=${a.x} y="0" width=${a.w + 1e-3} height="1" fill=${o[a.mode] ?? "#8b949e"} />`)}
+          </svg>
+          <i class="strip-mark" style="left:${(Math.max(0, Math.min(1, (t.t - s) / Math.max(1, t.to - s))) * 100).toFixed(3)}%"></i>
+        </div>
       </div>
       <span class="tm-time">${n}</span>
       <select title=${l("tm.speed")} @change=${(a) => this._tm = { ...e, speed: Number(a.target.value) }}>
@@ -7945,6 +7949,16 @@ Qt.properties = {
         border: 1px solid color-mix(in srgb, var(--cp-accent) 45%, var(--cp-border)); backdrop-filter: blur(8px); }
       .tm-track { flex: 1; min-width: 180px; display: grid; gap: 3px; }
       .tm-track input { width: 100%; margin: 0; accent-color: var(--cp-accent); }
+      /* own thumb with a known width, so the strip below can be inset to exactly its travel */
+      .tm-track input::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 20px; border-radius: 7px; background: #fff; border: 2px solid var(--cp-accent); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5); cursor: grab; margin-top: -7px; }
+      .tm-track input::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: linear-gradient(var(--cp-accent), var(--cp-accent)) 0 / var(--tm-fill, 0%) 100% no-repeat, var(--cp-border); }
+      .tm-track input { -webkit-appearance: none; appearance: none; background: transparent; height: 20px; }
+      .tm-track input::-moz-range-thumb { width: 10px; height: 16px; border-radius: 7px; background: #fff; border: 2px solid var(--cp-accent); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5); }
+      .tm-track input::-moz-range-track { height: 6px; border-radius: 3px; background: var(--cp-border); }
+      .tm-track input::-moz-range-progress { height: 6px; border-radius: 3px; background: var(--cp-accent); }
+      .strip-wrap { position: relative; margin: 0 7px; }
+      .strip-mark { position: absolute; top: -4px; bottom: -4px; width: 3px; margin-left: -1.5px; border-radius: 2px; background: #fff;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7), 0 0 6px rgba(255, 255, 255, 0.6); pointer-events: none; }
       .strip { width: 100%; height: 6px; border-radius: 3px; background: var(--cp-border); display: block; }
       .tm-time { font-weight: 800; font-variant-numeric: tabular-nums; min-width: 128px; }
       .tm select { width: auto; padding: 4px 8px; font-size: 12px; }
@@ -7992,7 +8006,7 @@ const es = class es extends se {
     super(...arguments), this._chartKey = "", this._costs = [], this._costKey = "", this.sim = null, this.version = 0, this._data = null, this._error = "", this._loadedAt = 0, this._loadedFor = null;
   }
   connectedCallback() {
-    super.connectedCallback(), pn ??= import("./echart-B_4jTAey.js").catch((e) => {
+    super.connectedCallback(), pn ??= import("./echart-CB11nErv.js").catch((e) => {
       pn = null, console.error("COPilot: chart module failed to load", e);
     });
   }
@@ -9130,7 +9144,7 @@ const is = class is extends se {
     })}></cp-echart>`;
   }
   connectedCallback() {
-    super.connectedCallback(), yn ??= import("./echart-B_4jTAey.js").catch((e) => {
+    super.connectedCallback(), yn ??= import("./echart-CB11nErv.js").catch((e) => {
       yn = null, console.error("COPilot: chart module failed to load", e);
     });
   }
