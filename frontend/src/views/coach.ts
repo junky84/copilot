@@ -18,6 +18,13 @@ function when(ts: number | string, withDay = true): string {
   return d.toLocaleString(undefined, withDay ? { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" } : { hour: "2-digit", minute: "2-digit" });
 }
 
+/** epoch ms → value of <input type="datetime-local"> */
+function localInput(ms: number): string {
+  const d = new Date(ms);
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+}
+
 const sign = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : "±"}${fmtNum(Math.abs(v), 1)}`;
 
 export class CpCoach extends LitElement {
@@ -34,6 +41,8 @@ export class CpCoach extends LitElement {
     _checks: { state: true },
     _target: { state: true },
     _disturb: { state: true },
+    _from: { state: true },
+    lastChange: { type: Number },
     _showLog: { state: true },
   };
   hass?: Hass;
@@ -48,6 +57,10 @@ export class CpCoach extends LitElement {
   private _checks = new Set<string>();
   private _target = 21;
   private _disturb = "";
+  /** start of the measurements (datetime-local value) */
+  private _from = "";
+  /** last change of a curve parameter in Home Assistant (epoch ms), if known */
+  lastChange: number | null = null;
   private _showLog = false;
 
   private _emit(name: string, detail?: unknown) {
@@ -57,6 +70,8 @@ export class CpCoach extends LitElement {
   private _openStart() {
     this._target = this.state?.target ?? this.params.roomSet;
     this._disturb = this.state?.disturb ?? "";
+    const from = this.state ? new Date(this.state.step_since).getTime() : this.lastChange ?? Date.now();
+    this._from = this.demo ? "" : localInput(from);
     this._checks = new Set();
     this._start = true;
   }
@@ -231,6 +246,18 @@ export class CpCoach extends LitElement {
           <input type="number" step="0.5" min="16" max="26" .value=${String(this._target)}
             @input=${(e: Event) => (this._target = Number((e.target as HTMLInputElement).value))} /></label>
         <p class="muted small">${t("cc.target_hint")}</p>
+        ${this.demo
+          ? nothing
+          : html`<label class="small field">${t("cc.from")}
+                <input type="datetime-local" .value=${this._from} max=${localInput(Date.now())}
+                  @input=${(e: Event) => (this._from = (e.target as HTMLInputElement).value)} /></label>
+              <p class="muted small">${this.lastChange
+                ? html`${t("cc.from_hint", { date: when(this.lastChange) })}
+                    <button class="link" @click=${() => (this._from = localInput(this.lastChange!))}>${t("cc.from_use")}</button>`
+                : t("cc.from_hint_none")}</p>
+              ${this._from && this.lastChange && new Date(this._from).getTime() < this.lastChange - 60_000
+                ? html`<p class="small warn-t">${t("cc.from_early")}</p>`
+                : nothing}`}
         <label class="small field">${t("cc.disturb")}
           <input list="cc-ents" .value=${this._disturb} placeholder="binary_sensor.kaminofen"
             @input=${(e: Event) => (this._disturb = (e.target as HTMLInputElement).value.trim())} /></label>
@@ -241,7 +268,8 @@ export class CpCoach extends LitElement {
           <button class="primary" ?disabled=${(!restart && !all) || !(this._target >= 16 && this._target <= 26)}
             @click=${() => {
               this._start = false;
-              this._emit(restart ? "coach-settings" : "coach-start", { target: this._target, disturb: this._disturb || undefined });
+              const from = this._from ? new Date(this._from).toISOString() : undefined;
+              this._emit(restart ? "coach-settings" : "coach-start", { target: this._target, disturb: this._disturb || undefined, from });
             }}>${restart ? t("apply") : html`${icon("play")} ${t("cc.start")}`}</button>
         </div>
       </div>`;
@@ -285,6 +313,8 @@ export class CpCoach extends LitElement {
       .log { width: 100%; border-collapse: collapse; }
       .log th { text-align: left; color: var(--cp-muted); font-weight: 600; border-bottom: 1px solid var(--cp-border); padding: 4px 6px; }
       .log td { padding: 5px 6px; border-bottom: 1px solid var(--cp-border); vertical-align: top; }
+      .link { background: none; border: none; padding: 0; color: var(--cp-accent); text-decoration: underline; cursor: pointer; font-size: inherit; }
+      .warn-t { color: var(--cp-warn); }
       .chk { display: flex; gap: 8px; align-items: flex-start; }
       .chk input { margin-top: 3px; }
       .field { display: grid; gap: 4px; margin-top: 8px; }

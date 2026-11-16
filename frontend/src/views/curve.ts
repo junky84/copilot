@@ -61,6 +61,7 @@ export class CpCurve extends LitElement {
     _confirm: { state: true },
     _restart: { state: true },
     _disturbed: { state: true },
+    _lastChange: { state: true },
   };
   plant!: Plant;
   src!: ValueSource;
@@ -78,6 +79,7 @@ export class CpCurve extends LitElement {
   /** hours (epoch ms) marked by the coach's disturbance entity or a room temperature jump */
   private _disturbed = new Set<number>();
   private _dueFixedFor = "";
+  private _lastChange: number | null = null;
 
   private get _circuits(): PlantComponent[] {
     return this.plant.components.filter((c) => c.type === "radiators" || c.type === "floor_heating");
@@ -166,6 +168,7 @@ export class CpCurve extends LitElement {
       /* history not available: only the room temperature jumps count */
     }
     this._disturbed = dist;
+    void this._loadLastChange();
   }
 
   /**
@@ -358,9 +361,50 @@ export class CpCurve extends LitElement {
     this.dispatchEvent(new CustomEvent("save", { detail: plant, bubbles: true, composed: true }));
   }
 
-  private _coachStart(d: { target: number; disturb?: string }) {
-    const state = newCoach(d.target, new Date(this._stepTs()));
+  private _coachStart(d: { target: number; disturb?: string; from?: string }) {
+    // measurements since the last curve change may be used right away (no first settling)
+    const from = d.from && !this.sim ? new Date(Math.min(Date.now(), new Date(d.from).getTime())) : new Date(this._stepTs());
+    const state = newCoach(d.target, from);
     this._saveCoach({ ...state, disturb: d.disturb });
+  }
+
+  private _coachSettings(coach: CoachState, d: { target: number; disturb?: string; from?: string }) {
+    let next: CoachState = { ...coach, target: d.target, disturb: d.disturb };
+    if (d.from && !this.sim && d.from !== coach.step_since) {
+      const ms = Math.min(Date.now(), new Date(d.from).getTime());
+      next = { ...next, step_since: new Date(ms).toISOString(), snooze_until: undefined, due_at: Math.round(ms / 1000 + (SETTLE_H + MIN_DAYS * 24) * 3600) };
+      if (!coach.log.length) next.started = next.step_since;
+    }
+    this._saveCoach(next);
+  }
+
+  /** Last change of a bound curve parameter (history of the last 30 days). */
+  private async _loadLastChange(): Promise<void> {
+    const hc = this._circuit;
+    if (!hc || !this.hass || this.sim) return;
+    const ids = PARAMS.map((d) => hc.bindings[d.slot]).filter((e): e is string => !!e && /^(number|input_number)\./.test(e));
+    if (!ids.length) return;
+    try {
+      const res = await this.hass.callWS<Record<string, { s: string; lu: number }[]>>({
+        type: "history/history_during_period",
+        start_time: new Date(Date.now() - 30 * 86400_000).toISOString(),
+        entity_ids: ids,
+        minimal_response: true,
+        no_attributes: true,
+      });
+      let last = 0;
+      for (const rows of Object.values(res)) {
+        let prev: string | null = null;
+        for (const r of rows) {
+          if (r.s === "unavailable" || r.s === "unknown") continue;
+          if (prev !== null && r.s !== prev) last = Math.max(last, r.lu * 1000);
+          prev = r.s;
+        }
+      }
+      this._lastChange = last || null;
+    } catch {
+      this._lastChange = null;
+    }
   }
 
   private async _coachApply(d: { change: Partial<CurveParams>; why: string; dev: CoachLogEntry["dev"]; manual: boolean }) {
@@ -638,7 +682,8 @@ export class CpCurve extends LitElement {
             ?demo=${!!this.sim}
             ?canWrite=${!!this.sim || PARAMS.some((d) => this._writable(d.key))}
             @coach-start=${(e: CustomEvent) => this._coachStart(e.detail)}
-            @coach-settings=${(e: CustomEvent) => coach && this._saveCoach({ ...coach, ...e.detail })}
+            @coach-settings=${(e: CustomEvent) => coach && this._coachSettings(coach, e.detail)}
+            .lastChange=${this._lastChange}
             @coach-stop=${() => this._saveCoach(null)}
             @coach-preview=${(e: CustomEvent) => {
               this._edit = { ...e.detail };
