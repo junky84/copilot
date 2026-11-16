@@ -43,6 +43,7 @@ def _without_maintenance(plant: dict[str, Any]) -> dict[str, Any]:
     settings = dict(plant.get("settings") or {})
     settings.pop("maintenance", None)
     settings.pop("curve_since", None)
+    settings.pop("curve_coach", None)
     return {**plant, "settings": settings}
 
 

@@ -6,19 +6,14 @@ import { icon, logo, tokens, ui } from "./styles";
 import type { Hass, Plant } from "./types";
 import { examplePlant } from "./templates";
 import "./sidebar-icon";
-import "./views/maintenance";
-import "./views/overview";
 import "./views/editor";
 import "./views/config";
 import "./views/widgets";
-import "./views/efficiency";
-import "./views/check";
-import "./views/curve";
 import "./views/credits";
 import type { CpCredits } from "./views/credits";
 import "./card";
 
-type View = "overview" | "efficiency" | "check" | "curve" | "maintenance" | "messages" | "config";
+import { ALL_VIEWS, VIEW_ICON, renderView, type View } from "./views/router";
 type Sub = "wizard" | "editor" | "mapping" | "icons" | "settings";
 
 const LS_VIEW = "copilot.view";
@@ -64,7 +59,7 @@ export class CopilotPanel extends LitElement {
     const saved = lsGet(LS_VIEW);
     if (saved) {
       const [v, s] = saved.split(":");
-      if (["overview", "efficiency", "check", "curve", "maintenance", "messages", "config"].includes(v)) this._view = v as View;
+      if ((ALL_VIEWS as string[]).includes(v)) this._view = v as View;
       if (s) this._sub = s as Sub;
     }
   }
@@ -115,9 +110,9 @@ export class CopilotPanel extends LitElement {
           : nothing}
         <div class="brand" @click=${(e: MouseEvent) => e.detail === 3 && this._openCredits()}>${logo}<span>COP<b>ilot</b></span></div>
         <nav>
-          ${(["overview", "efficiency", "check", "curve", "maintenance", "messages", "config"] as View[]).map(
+          ${ALL_VIEWS.map(
             (v) => html`<button class="tab ${this._view === v ? "on" : ""}" title=${t(`nav.${v}`)} @click=${() => this._go(v)}>
-              ${icon(v === "overview" ? "grid" : v === "efficiency" ? "chart" : v === "check" ? "check" : v === "curve" ? "curve" : v === "maintenance" ? "wrench" : v === "messages" ? "bell" : "gear")}
+              ${icon(VIEW_ICON[v])}
               <span class="tl">${t(`nav.${v}`)}</span>
               ${v === "messages" && alerts ? html`<span class="badge">${alerts}</span>` : nothing}
             </button>`,
@@ -139,46 +134,13 @@ export class CopilotPanel extends LitElement {
 
   private _content(plant: Plant) {
     const src = this._ctl.src;
-    if (this._view === "overview") {
-      return html`<cp-overview
-        .plant=${plant}
-        .src=${src}
-        .icons=${this._ctl.icons}
-        .messages=${this._ctl.messages}
-        .sim=${this._ctl.sim}
-        .hass=${this.hass}
-        .api=${this._ctl.api}
-        ?admin=${this._ctl.admin}
-        .version=${this._ctl.version}
-        ?narrow=${this.narrow || window.innerWidth < 900}
-        @scenario=${(e: CustomEvent) => this._ctl.scenario(e.detail)}
-      ></cp-overview>`;
-    }
-    if (this._view === "efficiency") {
-      return html`<cp-efficiency
-        .plant=${plant}
-        .src=${src}
-        .hass=${this.hass}
-        .sim=${this._ctl.sim}
-        .version=${this._ctl.version}
-      ></cp-efficiency>`;
-    }
-    if (this._view === "check") {
-      return html`<cp-check .plant=${plant} .src=${src} .sim=${this._ctl.sim} .version=${this._ctl.version}></cp-check>`;
-    }
-    if (this._view === "curve") {
-      return html`<cp-curve .plant=${plant} .src=${src} .hass=${this.hass} .sim=${this._ctl.sim} .version=${this._ctl.version} ?admin=${this._ctl.admin}
-        @save=${(e: CustomEvent) => this._save(e.detail)}></cp-curve>`;
-    }
-    if (this._view === "maintenance") {
-      return html`<cp-maintenance .plant=${plant} ?admin=${this._ctl.admin} @save=${(e: CustomEvent) => this._save(e.detail)}></cp-maintenance>`;
-    }
-    if (this._view === "messages") {
-      return html`<div class="card pad"><cp-messages
-        .messages=${this._ctl.messages}
-        ?canClear=${this._ctl.admin && !this._ctl.sim}
-        @clear=${() => this._ctl.clearMessages()}
-      ></cp-messages></div>`;
+    if (this._view !== "config") {
+      return renderView(this._view, plant, {
+        ctl: this._ctl,
+        hass: this.hass,
+        narrow: this.narrow || window.innerWidth < 900,
+        save: (p: Plant) => this._save(p),
+      });
     }
     if (!this._ctl.admin) return html`<div class="card">${t("readonly_hint")}</div>`;
     const subs: Sub[] = ["wizard", "editor", "mapping", "icons", "settings"];

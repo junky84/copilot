@@ -23,6 +23,7 @@ Built first for Buderus/Bosch heat pumps read via an **EMS-ESP gateway** (BBQKee
 - **2.5D style** (*Configuration → Settings → Style*): components with depth and soft shadows, tube-like pipes and an isometric floor – same layout, values and interaction as the flat style
 - **Interactive charts** (Apache ECharts, as used by Home Assistant itself): tooltips, zoom, series toggled via the legend
 - **Costs & PV share** (efficiency tab): grid cost of the heat pump per day / 30 days, share covered by PV or battery (hour by hour from the energy layer), feed-in revenue given up, cost per kWh of heat and comparison with a gas boiler; fixed price or a price entity (dynamic tariffs)
+- **Heating curve coach** (heating curve tab): guides you step by step – over days or weeks – to the lowest curve that still keeps the reference room at your desired temperature. Checklist (valves open, no setback), a settling day after every change, then at least 36 heating hours on 2 days; hours with a stove/open window (optional entity) or sudden room temperature jumps are ignored. It compares mild and cold weather to decide between a parallel shift and a steeper/flatter curve, suggests exactly one small change per round (applied directly or confirmed as “set at the controller”), keeps a log and sends a message when the next evaluation is ready. Hover a measurement to see its hour, room temperature and whether it was disturbed
 - **Maintenance calendar** (wrench tab): recurring tasks suggested from your components (system pressure, particle filter SC1, dirt separator, expansion vessel, outdoor unit, DHW anode, professional service) plus your own; due tasks become messages and fire `copilot_message` for push notifications
 - **Write access for selected values**: release single values with ✎ in the editor (e.g. DHW setpoint, one-time charge, operating mode – any number / select / switch / button entity). Change them from the value popover with a confirmation step; the backend only accepts released values within the entity limits and logs every change under messages. Admins only, unless allowed for all users in the settings
 - **Time machine** (clock button): replay the last 6 h / 24 h / 3 days from the Home Assistant recorder – the whole schematic, values, explain mode and KPIs at any moment, with a strip of operating modes (heating, hot water, defrost) and playback at up to 1 h per second
@@ -83,7 +84,12 @@ cards:
     show_messages: false       # messages column
     show_demo_controls: false  # demo speed / scenarios
     # height: 600px            # optional; panel views fill the screen
+    # views: [overview, curve, efficiency]  # menu of the card (default: overview only);
+    #                          # also check, maintenance, messages – the configuration stays in the panel
+    # back_after: 120          # seconds without touch → back to the first entry (wall displays)
 ```
+
+All options can also be set in the visual card editor (*Menu entries of the card*).
 
 ## Connecting the EMS-ESP gateway
 

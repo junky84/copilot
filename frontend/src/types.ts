@@ -144,6 +144,8 @@ export interface PlantSettings {
   layout_edited?: boolean;
   /** heating curve view: show measurements only from this point on (circuit id → ISO time) */
   curve_since?: Record<string, string>;
+  /** heating curve coach per circuit id (see data/coach.ts) */
+  curve_coach?: Record<string, import("./data/coach").CoachState>;
   /** last wizard answers, to reopen the wizard pre-filled */
   wizard?: any;
 }

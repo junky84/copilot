@@ -5,15 +5,23 @@ import type { Hass, Plant, PlantComponent } from "../types";
 import type { ValueSource } from "../data/values";
 import type { Simulator } from "../sim/simulator";
 import { defaultCurve, flowTarget, suggestOffset, type CurveParams } from "../data/curve";
+import { afterChange, coachStatus, jumpDisturbed, newCoach, MIN_DAYS, SETTLE_H, type CoachLogEntry, type CoachState, type CoachStatus } from "../data/coach";
+import "./coach";
 // ECharts is loaded on demand (separate chunk)
 import type { ChartOption, ChartTheme } from "./echart";
 
 interface Pt {
+  /** start of the hour, epoch ms */
+  ts: number;
   tOut: number;
   flow: number;
   room?: number;
   age: number; // 0 = newest, 1 = oldest
+  /** the heat pump heated in this hour (false: above the heating limit) */
+  heating: boolean;
 }
+
+const H = 3600_000;
 
 /** Curve parameter ↔ heating circuit slot. */
 const PARAMS: { key: keyof CurveParams; slot: string; min: number; max: number; step: number }[] = [
@@ -52,6 +60,7 @@ export class CpCurve extends LitElement {
     _msg: { state: true },
     _confirm: { state: true },
     _restart: { state: true },
+    _disturbed: { state: true },
   };
   plant!: Plant;
   src!: ValueSource;
@@ -66,6 +75,9 @@ export class CpCurve extends LitElement {
   private _confirm = false;
   private _restart: string | null = null;
   private _loadedFor: unknown = null;
+  /** hours (epoch ms) marked by the coach's disturbance entity or a room temperature jump */
+  private _disturbed = new Set<number>();
+  private _dueFixedFor = "";
 
   private get _circuits(): PlantComponent[] {
     return this.plant.components.filter((c) => c.type === "radiators" || c.type === "floor_heating");
@@ -123,7 +135,7 @@ export class CpCurve extends LitElement {
   }
 
   protected willUpdate(): void {
-    const key = `${this.sim ? "sim" : "ha"}:${this._circuit?.id}:${this._since?.getTime() ?? ""}`;
+    const key = `${this.sim ? `sim:${JSON.stringify(this.sim.curve)}` : "ha"}:${this._circuit?.id}:${this._since?.getTime() ?? ""}:${this._coach?.disturb ?? ""}`;
     if (key !== this._loadedFor) {
       this._loadedFor = key;
       this._load();
@@ -134,6 +146,7 @@ export class CpCurve extends LitElement {
 
   private async _load(): Promise<void> {
     this._points = null;
+    this._disturbed = new Set();
     const hc = this._circuit;
     const ou = this.plant.components.find((c) => c.type === "outdoor_unit");
     const iu = this.plant.components.find((c) => c.type === "indoor_unit");
@@ -146,12 +159,29 @@ export class CpCurve extends LitElement {
     } catch {
       this._points = [];
     }
+    const dist = jumpDisturbed(this._points);
+    try {
+      if (!this.sim) for (const h of await this._disturbHours()) dist.add(h);
+    } catch {
+      /* history not available: only the room temperature jumps count */
+    }
+    this._disturbed = dist;
   }
 
-  /** Demo: last 24 h from the simulation plus earlier days from the climate model. */
+  /**
+   * Demo: last 24 h from the simulation plus earlier days from the climate model. The room
+   * temperature of the modelled days follows a hidden "true" curve of the demo house, so the
+   * coach has something to find.
+   */
   private _simPoints(): Pt[] {
     const sim = this.sim!;
     const out: Pt[] = [];
+    const now = Math.floor(Date.now() / H) * H;
+    const truth: CurveParams = { ...sim.curve, design: defaultCurve(sim.curve.exponent < 1.2).design - 4, offset: 0.5 };
+    const roomFor = (tt: number, flow: number) => {
+      const need = flowTarget(truth, tt) ?? flow;
+      return sim.curve.roomSet + (flow - need) / (sim.curve.exponent > 1.2 ? 2.5 : 1.5);
+    };
     const tOut = sim.history("outdoor", "outdoor_temp", 24);
     const flow = sim.history("hc", "flow_temp", 24);
     const room = sim.history("hc", "room_temp", 24);
@@ -164,15 +194,16 @@ export class CpCurve extends LitElement {
       if (!a.length || !f.length) continue;
       const avg = (x: number[]) => x.reduce((s, v) => s + v, 0) / x.length;
       if (avg(a) >= sim.curve.limit) continue;
-      out.push({ tOut: avg(a), flow: avg(f), room: r.length ? avg(r) : undefined, age: 0 });
+      out.push({ ts: now - (24 - h) * H, tOut: avg(a), flow: avg(f), room: r.length ? avg(r) : undefined, age: 0, heating: true });
     }
     // earlier days: what the plant would have done around the configured outdoor temperature
     for (let d = 1; d < DAYS; d++) {
-      for (let h = 0; h < 24; h += 2) {
-        const tt = sim.outdoorMean + 2.5 * Math.cos(((h - 15) / 24) * 2 * Math.PI) + Math.sin(d * 1.7 + h) * 3;
+      for (let h = 0; h < 24; h += 1) {
+        const tt = sim.outdoorMean + 2.5 * Math.cos(((h - 15) / 24) * 2 * Math.PI) + Math.sin(d * 1.7 + h) * 3 + Math.sin(d * 0.45) * 4;
         const target = flowTarget(sim.curve, tt);
         if (target === null) continue;
-        out.push({ tOut: tt, flow: target + Math.sin(d * 3.1 + h * 0.7) * 1.4 - 0.6, room: sim.curve.roomSet + Math.sin(d + h) * 0.3, age: d / DAYS });
+        const flow = target + Math.sin(d * 3.1 + h * 0.7) * 1.4 - 0.6;
+        out.push({ ts: now - (d * 24 + 24 - h) * H, tOut: tt, flow, room: roomFor(tt, flow) + Math.sin(d + h) * 0.15, age: d / DAYS, heating: true });
       }
     }
     return out;
@@ -206,13 +237,47 @@ export class CpCurve extends LitElement {
     const pts: Pt[] = [];
     for (const [ts, tOut] of out) {
       const f = flow.get(ts);
-      if (tOut == null || f == null || tOut >= limit) continue;
+      if (tOut == null || f == null) continue;
+      const age = Math.min(1, (now.getTime() - ts) / span);
+      const r = room.get(ts) ?? undefined;
+      // above the heating limit: only the room temperature counts (does the house cool down?)
+      if (tOut >= limit) {
+        pts.push({ ts, tOut, flow: f, room: r, age, heating: false });
+        continue;
+      }
       // with a heat output statistic, only hours in which the heat pump actually heated
       const q = heat.get(ts);
       if (heat.size && (q == null || q < 0.3)) continue;
-      pts.push({ tOut, flow: f, room: room.get(ts) ?? undefined, age: Math.min(1, (now.getTime() - ts) / span) });
+      pts.push({ ts, tOut, flow: f, room: r, age, heating: true });
     }
     return pts;
+  }
+
+  /** Hours (epoch ms) in which the coach's disturbance entity was on. */
+  private async _disturbHours(): Promise<number[]> {
+    const id = this._coach?.disturb;
+    if (!id || !this.hass) return [];
+    const now = new Date();
+    const { start } = this._range(now);
+    const res = await this.hass.callWS<Record<string, { s: string; lu: number }[]>>({
+      type: "history/history_during_period",
+      start_time: start.toISOString(),
+      end_time: now.toISOString(),
+      entity_ids: [id],
+      minimal_response: true,
+      no_attributes: true,
+    });
+    const rows = res[id] || [];
+    const on = (s: string) => ["on", "heat", "heating", "open", "true", "home"].includes(s.toLowerCase());
+    const hours: number[] = [];
+    for (let i = 0; i < rows.length; i++) {
+      if (!on(rows[i].s)) continue;
+      const from = Math.floor((rows[i].lu * 1000) / H) * H;
+      const to = i + 1 < rows.length ? rows[i + 1].lu * 1000 : now.getTime();
+      // the hour after the disturbance still counts as disturbed
+      for (let h = from; h <= to + H; h += H) hours.push(h);
+    }
+    return hours;
   }
 
   // ------------------------------------------------------------ actions
@@ -222,27 +287,117 @@ export class CpCurve extends LitElement {
     this._msg = "";
   }
 
+  private async _write(edit: Partial<CurveParams>): Promise<void> {
+    if (this.sim) {
+      this.sim.curve = { ...this.sim.curve, ...edit };
+      return;
+    }
+    const hc = this._circuit!;
+    for (const [key, value] of Object.entries(edit) as [keyof CurveParams, number][]) {
+      const d = PARAMS.find((x) => x.key === key)!;
+      const entity = hc.bindings[d.slot];
+      if (!entity) continue;
+      await this.hass!.callWS({
+        type: "call_service",
+        domain: entity.split(".")[0],
+        service: "set_value",
+        service_data: { entity_id: entity, value },
+      });
+    }
+  }
+
   private async _apply() {
     this._confirm = false;
-    const changes = Object.entries(this._edit) as [keyof CurveParams, number][];
-    if (this.sim) {
-      this.sim.curve = { ...this.sim.curve, ...this._edit };
-    } else {
-      const hc = this._circuit!;
-      for (const [key, value] of changes) {
-        const d = PARAMS.find((x) => x.key === key)!;
-        const entity = hc.bindings[d.slot];
-        if (!entity) continue;
-        await this.hass!.callWS({
-          type: "call_service",
-          domain: entity.split(".")[0],
-          service: "set_value",
-          service_data: { entity_id: entity, value },
-        });
-      }
+    const edit = this._edit;
+    try {
+      await this._write(edit);
+    } catch (err: any) {
+      this._msg = err?.message || String(err);
+      return;
+    }
+    // a change while the coach runs starts a new round (also when made by hand in the sliders)
+    const coach = this._coach;
+    if (coach) {
+      const cur = this._current();
+      const changes: CoachLogEntry["changes"] = {};
+      for (const [k, v] of Object.entries(edit) as [keyof CurveParams, number][]) changes[k] = [cur[k], v];
+      this._saveCoach(afterChange(coach, { ts: this._stepTs(), changes, why: "user" }));
     }
     this._edit = {};
     this._msg = t("cv.applied");
+  }
+
+  // ------------------------------------------------------------ coach
+
+  private get _coach(): CoachState | undefined {
+    const hc = this._circuit;
+    return hc ? this.plant.settings.curve_coach?.[hc.id] : undefined;
+  }
+
+  /**
+   * Time of a coach step. In the demo the waiting time is skipped: the step is dated back so
+   * that the modelled days count right away.
+   */
+  private _stepTs(): string {
+    const back = this.sim ? (SETTLE_H + MIN_DAYS * 24 + 12) * H : 0;
+    return new Date(Date.now() - back).toISOString();
+  }
+
+  /** Save the coach state; every step also restarts the measurements shown in the chart. */
+  private _saveCoach(state: CoachState | null) {
+    const hc = this._circuit;
+    if (!hc) return;
+    const plant: Plant = structuredClone(this.plant);
+    const coach = { ...(plant.settings.curve_coach || {}) };
+    const since = { ...(plant.settings.curve_since || {}) };
+    if (state) {
+      coach[hc.id] = state;
+      if (!this.sim) since[hc.id] = state.step_since;
+    } else delete coach[hc.id];
+    plant.settings = { ...plant.settings, curve_coach: coach, curve_since: since };
+    this.dispatchEvent(new CustomEvent("save", { detail: plant, bubbles: true, composed: true }));
+  }
+
+  private _coachStart(d: { target: number; disturb?: string }) {
+    const state = newCoach(d.target, new Date(this._stepTs()));
+    this._saveCoach({ ...state, disturb: d.disturb });
+  }
+
+  private async _coachApply(d: { change: Partial<CurveParams>; why: string; dev: CoachLogEntry["dev"]; manual: boolean }) {
+    const coach = this._coach;
+    if (!coach) return;
+    const cur = this._current();
+    const changes: CoachLogEntry["changes"] = {};
+    for (const [k, v] of Object.entries(d.change) as [keyof CurveParams, number][]) changes[k] = [cur[k], v];
+    if (!d.manual || this.sim) {
+      try {
+        await this._write(d.change);
+      } catch (err: any) {
+        this._msg = err?.message || String(err);
+        return;
+      }
+    }
+    this._edit = {};
+    const dev = d.dev ? { mild: (d.dev as any).mild, cold: (d.dev as any).cold, all: (d.dev as any).all } : undefined;
+    this._saveCoach(afterChange(coach, { ts: this._stepTs(), changes, why: d.why, dev, manual: d.manual && !this.sim }));
+    this._msg = t("cc.applied");
+  }
+
+  /**
+   * Keep the backend's "evaluation due" message honest: while data is still missing, move
+   * the due time to the estimate; when the curve fits, check again in a week.
+   */
+  private _fixDue(coach: CoachState | undefined, status: CoachStatus | null) {
+    if (!coach || !status || !this.admin || this.sim) return;
+    const nowS = Date.now() / 1000;
+    let due: number | undefined;
+    if (status.kind === "collect" && (coach.due_at ?? 0) <= nowS) due = Math.round(status.eta / 1000);
+    else if (status.kind === "fits" && (coach.due_at ?? 0) <= nowS) due = Math.round(nowS + 7 * 86400);
+    if (due === undefined) return;
+    const key = `${this._circuit?.id}:${coach.step_since}:${status.kind}`;
+    if (this._dueFixedFor === key) return;
+    this._dueFixedFor = key;
+    queueMicrotask(() => this._saveCoach({ ...coach, due_at: due }));
   }
 
   // ------------------------------------------------------------ render
@@ -279,7 +434,19 @@ export class CpCurve extends LitElement {
         textStyle: { color: th.text, fontSize: 12 },
         formatter: (it: any) => {
           const [x, y] = it.value as [number, number];
-          return `<b>${it.seriesName}</b><br>${t("cv.tip", { out: deg(x), flow: deg(y) })}`;
+          const p = it.data?.pt as Pt | undefined;
+          let head = `<b>${it.seriesName}</b>`;
+          if (p) {
+            const a = new Date(p.ts);
+            const b = new Date(p.ts + H);
+            const day = a.toLocaleDateString(undefined, { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" });
+            const hm = (d: Date) => d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+            head = `<b>${day}, ${hm(a)}–${hm(b)}</b><br><span style="opacity:.7">${t("cv.tip_mean")}</span>`;
+          }
+          let body = t("cv.tip", { out: deg(x), flow: deg(y) });
+          if (p?.room !== undefined) body += `<br>${t("cv.tip_room", { room: deg(Math.round(p.room * 10) / 10) })}`;
+          if (p && this._disturbed.has(p.ts)) body += `<br><i>${t("cv.tip_disturbed")}</i>`;
+          return `${head}<br>${body}`;
         },
       },
       xAxis: {
@@ -308,7 +475,13 @@ export class CpCurve extends LitElement {
           type: "scatter",
           symbolSize: 6,
           z: 1,
-          data: pts.map((p) => ({ value: [p.tOut, Math.round(p.flow * 10) / 10], itemStyle: { color: "#f5c542", opacity: 0.85 - p.age * 0.6 } })),
+          data: pts.filter((p) => p.heating).map((p) => ({
+            value: [p.tOut, Math.round(p.flow * 10) / 10],
+            pt: p,
+            itemStyle: this._disturbed.has(p.ts)
+              ? { color: "transparent", borderColor: "#f5c542", borderWidth: 1, opacity: 0.6 }
+              : { color: "#f5c542", opacity: 0.85 - p.age * 0.6 },
+          })),
           markArea: {
             silent: true,
             itemStyle: { color: "rgba(77,159,255,0.08)" },
@@ -382,7 +555,11 @@ export class CpCurve extends LitElement {
     const edited = Object.keys(this._edit).length > 0;
     const next = edited ? { ...cur, ...this._edit } : null;
     const view = next || cur;
-    const pts = this._points || [];
+    const all = this._points || [];
+    const pts = all.filter((p) => p.heating);
+    const coach = this._coach;
+    const status = coach && this._points ? coachStatus(cur, coach, all, this._disturbed) : null;
+    this._fixDue(coach, status);
     const rooms = pts.filter((p) => p.age < 0.5 && p.room !== undefined).map((p) => p.room!);
     const roomMean = rooms.length ? rooms.reduce((a, b) => a + b, 0) / rooms.length : undefined;
     const dev = pts.length ? pts.reduce((s, p) => s + (p.flow - (flowTarget(cur, p.tOut) ?? p.flow)), 0) / pts.length : undefined;
@@ -443,7 +620,7 @@ export class CpCurve extends LitElement {
               : nothing}
             ${roomMean !== undefined
               ? html`<p class="small">${t("cv.room", { room: roomMean, set: cur.roomSet })}</p>
-                  ${Math.abs(suggestion) >= 0.5
+                  ${coach ? html`<p class="muted small">${t("cv.see_coach")}</p>` : Math.abs(suggestion) >= 0.5
                     ? html`<div class="hint">${t(suggestion < 0 ? "cv.suggest_down" : "cv.suggest_up", { value: Math.abs(suggestion), target: cur.offset + suggestion })}
                         <button class="small-btn" @click=${() => this._set("offset", cur.offset + suggestion)}>${t("cv.try")}</button></div>`
                     : html`<p class="ok small">${t("cv.fits")}</p>`}`
@@ -451,6 +628,26 @@ export class CpCurve extends LitElement {
           </div>
         </div>
       </div>
+      ${this._circuit
+        ? html`<cp-coach
+            .hass=${this.hass}
+            .state=${coach}
+            .status=${status}
+            .params=${cur}
+            ?admin=${this.admin || !!this.sim}
+            ?demo=${!!this.sim}
+            ?canWrite=${!!this.sim || PARAMS.some((d) => this._writable(d.key))}
+            @coach-start=${(e: CustomEvent) => this._coachStart(e.detail)}
+            @coach-settings=${(e: CustomEvent) => coach && this._saveCoach({ ...coach, ...e.detail })}
+            @coach-stop=${() => this._saveCoach(null)}
+            @coach-preview=${(e: CustomEvent) => {
+              this._edit = { ...e.detail };
+              this._msg = "";
+            }}
+            @coach-snooze=${() => coach && this._saveCoach({ ...coach, snooze_until: new Date(Date.now() + 2 * 86400_000).toISOString(), due_at: Math.round(Date.now() / 1000) + 2 * 86400 })}
+            @coach-apply=${(e: CustomEvent) => this._coachApply(e.detail)}
+          ></cp-coach>`
+        : nothing}
       ${this._restart !== null
         ? html`<div class="backdrop" @click=${() => (this._restart = null)}></div>
             <div class="dialog card">
@@ -486,6 +683,7 @@ export class CpCurve extends LitElement {
     css`
       :host { display: block; }
       .grid { display: grid; grid-template-columns: 1fr 320px; gap: 12px; align-items: start; }
+      cp-coach { margin-top: 12px; }
       .head { margin-bottom: 6px; }
       .head h2 { margin: 0 10px 0 0; }
       .head select { width: auto; }

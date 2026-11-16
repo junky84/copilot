@@ -256,6 +256,30 @@ async def test_maintenance_due_message(hass: HomeAssistant, hass_ws_client) -> N
     assert (await ws.receive_json())["result"]["backups"] == []
 
 
+async def test_curve_coach_due_message(hass: HomeAssistant, hass_ws_client) -> None:
+    import time as _time
+
+    await _setup(hass)
+    ws = await hass_ws_client(hass)
+    comps = [{"id": "hc1", "type": "radiators", "label": "HK1", "bindings": {}}]
+    coach = {"hc1": {"started": "x", "target": 22, "step_since": "x", "log": [], "due_at": _time.time() - 60}}
+    await ws.send_json({"id": 1, "type": "copilot/config/save", "plant": {**PLANT, "components": comps, "settings": {"curve_coach": coach}}})
+    assert (await ws.receive_json())["success"]
+    await ws.send_json({"id": 2, "type": "copilot/messages/list"})
+    msgs = (await ws.receive_json())["result"]["messages"]
+    due = [m for m in msgs if m["key"] == "curve_eval_due" and m["active"]]
+    assert len(due) == 1 and due[0]["params"]["circuit"] == "HK1" and due[0]["component_id"] == "hc1"
+    # a new round (due later) closes it; coach changes alone create no backup
+    coach["hc1"]["due_at"] = _time.time() + 86400
+    await ws.send_json({"id": 3, "type": "copilot/config/save", "plant": {**PLANT, "components": comps, "settings": {"curve_coach": coach}}})
+    assert (await ws.receive_json())["success"]
+    await ws.send_json({"id": 4, "type": "copilot/messages/list"})
+    msgs = (await ws.receive_json())["result"]["messages"]
+    assert not [m for m in msgs if m["key"] == "curve_eval_due" and m["active"]]
+    await ws.send_json({"id": 5, "type": "copilot/backups/list"})
+    assert (await ws.receive_json())["result"]["backups"] == []
+
+
 async def test_write_only_released_values(hass: HomeAssistant, hass_ws_client) -> None:
     from homeassistant.setup import async_setup_component
 

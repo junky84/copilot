@@ -102,6 +102,8 @@ class MessageEngine:
         self._unsub_avail: CALLBACK_TYPE | None = None
         self._unsub_maint: CALLBACK_TYPE | None = None
         self._maintenance: list[dict[str, Any]] = []
+        self._coach: dict[str, Any] = {}
+        self._circuit_labels: dict[str, str] = {}
         self._listeners: list[Callable[[dict[str, Any]], None]] = []
 
     # ------------------------------------------------------------ lifecycle
@@ -159,6 +161,11 @@ class MessageEngine:
         self._schedule_availability_check()
         settings = (plant or {}).get("settings") or {}
         self._maintenance = list(((settings.get("maintenance") or {}).get("tasks")) or [])
+        coach = settings.get("curve_coach")
+        self._coach = coach if isinstance(coach, dict) else {}
+        self._circuit_labels = {
+            c.get("id", ""): c.get("label") or "" for c in (plant or {}).get("components", []) if isinstance(c, dict)
+        }
         self._check_maintenance()
         self._unsub_maint = async_track_time_interval(self.hass, self._check_maintenance, timedelta(hours=1))
 
@@ -181,6 +188,22 @@ class MessageEngine:
             params = {"task_key": task.get("key"), "title": task.get("title") or "", "since": round(max(0.0, now - due) / 86400)}
             self._condition(ident, now >= due, LEVEL_NOTICE, "maintenance_due", params, task.get("component"))
         for ident in [i for i in self._active if i.startswith("maint|") and i not in idents]:
+            self._close(ident)
+        self._check_coach(now)
+
+    @callback
+    def _check_coach(self, now: float) -> None:
+        """Heating curve coach: tell the user when the next evaluation is ready."""
+        idents = set()
+        for circuit_id, state in self._coach.items():
+            due = state.get("due_at") if isinstance(state, dict) else None
+            if not isinstance(due, (int, float)):
+                continue
+            ident = f"coach|_plant|{circuit_id}"
+            idents.add(ident)
+            params = {"circuit": self._circuit_labels.get(circuit_id, circuit_id)}
+            self._condition(ident, now >= due, LEVEL_NOTICE, "curve_eval_due", params, circuit_id)
+        for ident in [i for i in self._active if i.startswith("coach|") and i not in idents]:
             self._close(ident)
 
     # ----------------------------------------------------------- listeners
