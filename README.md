@@ -54,8 +54,6 @@ COPilot is part of the default HACS catalog – no custom repository needed.
 3. *Settings → Devices & services → Add integration → COPilot*.
 4. Open **COPilot** in the sidebar. An example plant in demo mode is created automatically.
 
-Fallback (e.g. if the search does not find it): HACS → ⋮ (top right) → **Custom repositories** → URL `https://github.com/junky84/copilot`, type **Integration** → *Add*, then continue with step 1.
-
 Updates appear in HACS (and under *Settings → Updates*); install them and restart Home Assistant.
 
 Manual installation: copy `custom_components/copilot` from the release zip to `/config/custom_components/` and restart.
