@@ -6,7 +6,7 @@ Built first for Buderus/Bosch heat pumps read via an **EMS-ESP gateway** (BBQKee
 
 ![COPilot overview: energy flow, animated hydraulic schematic and messages (demo mode)](https://raw.githubusercontent.com/junky84/copilot/main/docs/images/overview.png)
 
-> Status: **v0.3 (preview)** – early test version, not yet verified on a real plant. Not affiliated with Bosch, Buderus or BBQKees.
+> Status: **v0.3** – in daily use since November 2026 on a real plant (Buderus WLW186i E + WLW-7 MB AR via EMS-ESP). Other indoor units and layouts offered by the wizard are less tested – feedback welcome via [issues](https://github.com/junky84/copilot/issues). Not affiliated with Bosch, Buderus or BBQKees.
 
 ## Features
 
