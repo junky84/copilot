@@ -47,12 +47,14 @@ All screenshots show the built-in demo mode with the physics simulator.
 
 ## Installation (HACS)
 
+COPilot is part of the default HACS catalog – no custom repository needed.
+
 1. Open HACS (called *Marketplace* since Home Assistant 2026.11), search for **COPilot** → **Download**.
 2. Restart Home Assistant.
 3. *Settings → Devices & services → Add integration → COPilot*.
 4. Open **COPilot** in the sidebar. An example plant in demo mode is created automatically.
 
-If COPilot does not show up in the search yet, add it as a custom repository first: HACS → ⋮ (top right) → **Custom repositories** → URL `https://github.com/junky84/copilot`, type **Integration** → *Add*, then continue with step 1.
+Fallback (e.g. if the search does not find it): HACS → ⋮ (top right) → **Custom repositories** → URL `https://github.com/junky84/copilot`, type **Integration** → *Add*, then continue with step 1.
 
 Updates appear in HACS (and under *Settings → Updates*); install them and restart Home Assistant.
 
