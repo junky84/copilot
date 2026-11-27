@@ -1,4 +1,4 @@
-import { C as e } from "./chunks/panel-PFYA_Sdk.js";
+import { C as e } from "./chunks/panel-DLrjgr5j.js";
 export {
   e as CopilotPanel
 };

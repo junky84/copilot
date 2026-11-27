@@ -31,6 +31,34 @@ const C_HEAT = "#9b8cff";
 
 let echartLoad: Promise<unknown> | null = null;
 
+/** One tooltip row: series marker, name, value, explanation. */
+type TipRow = [string, string, string, string];
+
+/** Tooltip frame shared by both charts (as in the efficiency view, plus a short explanation per row). */
+function tipBase(th: ChartTheme) {
+  return {
+    trigger: "axis",
+    confine: true,
+    axisPointer: { type: "shadow", shadowStyle: { color: "rgba(127,127,127,0.12)" } },
+    backgroundColor: th.surface,
+    borderColor: th.border,
+    textStyle: { color: th.text, fontSize: 12 },
+    extraCssText: "max-width:340px;white-space:normal;",
+  };
+}
+
+function tipHtml(title: string, rows: TipRow[]): string {
+  const body = rows
+    .map(
+      ([marker, name, value, note]) =>
+        `<div style="margin-top:5px"><div style="display:flex;gap:10px;justify-content:space-between"><span>${marker}${name}</span><b>${value}</b></div>` +
+        (note ? `<div style="opacity:0.7;font-size:11px;line-height:1.35;margin-left:${marker ? 14 : 0}px">${note}</div>` : "") +
+        `</div>`,
+    )
+    .join("");
+  return `<div style="font-weight:700">${title}</div>${body}`;
+}
+
 function factorColor(f: number, breakEven: number): string {
   if (!Number.isFinite(f)) return "var(--cp-muted)";
   return f >= breakEven * 1.4 ? AMPEL_COLOR.green : f >= breakEven ? AMPEL_COLOR.yellow : AMPEL_COLOR.red;
@@ -116,7 +144,8 @@ export class CpCompare extends LitElement {
         <div class="kv"><span>${t("cmp.old_kwh")}</span><b>${fmtNum(z.fuelKwh, 0)} kWh</b></div>
         <div class="kv"><span>${t("cmp.old_useful")}</span><b>${fmtNum(z.useful, 0)} kWh</b></div>
         ${heatRatio !== undefined
-          ? html`<div class="kv"><span>${t("cmp.heat_ratio")}</span><b class=${heatRatio > 1.2 ? "warn" : ""}>${fmtNum(heatRatio, 2)}</b></div>`
+          ? html`<div class="kv"><span>${t("cmp.heat_ratio")}</span><b class=${heatRatio > 1.2 ? "warn" : ""}>${fmtNum(heatRatio, 2)}</b></div>
+              ${heatRatio > 1.2 ? html`<p class="muted small">${t("cmp.heat_ratio_hint")}</p>` : nothing}`
           : nothing}
       </div>
       <div class="card tile">
@@ -132,7 +161,7 @@ export class CpCompare extends LitElement {
 
   // ------------------------------------------------------------ charts
 
-  /** Energy per day over the outdoor temperature. */
+  /** Energy per day over the outdoor temperature, in 1 K classes. */
   private _tempChart(d: BaselineData) {
     const fit = d.fit!;
     const cfg = baselineOf(this.plant);
@@ -141,81 +170,82 @@ export class CpCompare extends LitElement {
     const key = JSON.stringify([fit.a, fit.b, fit.base, d.compare.map((x) => [x.t, x.el, x.heat]), k, eff, getLang()]);
     if (key !== this._keyT) {
       this._keyT = key;
-      const bins = fit.bins.filter((b) => b.n >= 3);
-      const temps = [...bins.map((b) => b.t), ...d.compare.map((x) => x.t)];
-      const tMin = Math.floor((Math.min(-3, ...temps) - 0.5) / 5) * 5;
-      const tMax = Math.ceil((Math.max(20, ...temps) + 2) / 5) * 5;
-      const line: [number, number][] = [];
-      for (let x = tMin; x <= tMax; x += 0.5) line.push([x, Math.round(expectedFuel(fit, x) * k * eff * 10) / 10]);
       const unit = this._unit();
       const locale = getLang() === "de" ? "de-DE" : "en-GB";
-      const day = (ms: number) => new Date(ms).toLocaleDateString(locale, { weekday: "short", day: "2-digit", month: "2-digit" });
+      const dm = (ms: number) => new Date(ms).toLocaleDateString(locale, { day: "2-digit", month: "2-digit" });
+      const bins = new Map(fit.bins.filter((b) => b.n >= 3).map((b) => [b.t, b]));
+      const hp = new Map<number, CompareDay[]>();
+      for (const x of d.compare) {
+        const c = Math.floor(x.t);
+        hp.set(c, [...(hp.get(c) || []), x]);
+      }
+      const keys = [...bins.keys(), ...hp.keys()];
+      const lo = Math.min(...keys);
+      const hi = Math.max(...keys);
+      const classes: number[] = [];
+      for (let c = lo; c <= hi; c++) classes.push(c);
+      const avg = (list: CompareDay[] | undefined, f: (x: CompareDay) => number | undefined) => {
+        const v = (list || []).map(f).filter((x): x is number => x !== undefined);
+        return v.length ? v.reduce((s, x) => s + x, 0) / v.length : undefined;
+      };
+      const rows = classes.map((c) => {
+        const b = bins.get(c);
+        const days = hp.get(c);
+        const el = avg(days, (x) => x.el);
+        return {
+          c,
+          bin: b,
+          fuelKwh: b ? b.mean * k : undefined,
+          useful: expectedFuel(fit, c + 0.5) * k * eff,
+          days: days || [],
+          el,
+          heat: avg(days, (x) => x.heat),
+          factor: el ? (expectedFuel(fit, c + 0.5) * k * eff) / el : undefined,
+        };
+      });
+      const r1 = (v: number | undefined) => (v === undefined ? null : Math.round(v * 10) / 10);
+      const hasHeat = rows.some((r) => r.heat !== undefined);
       this._optT = (th: ChartTheme): ChartOption => ({
         animationDuration: 400,
         textStyle: { fontFamily: "inherit" },
-        grid: { left: 8, right: 12, top: 50, bottom: 8, containLabel: true },
+        grid: { left: 8, right: 8, top: 50, bottom: 8, containLabel: true },
         legend: { top: 0, right: 0, itemWidth: 12, itemHeight: 12, textStyle: { color: th.muted }, inactiveColor: th.border },
         tooltip: {
-          trigger: "item",
-          backgroundColor: th.surface,
-          borderColor: th.border,
-          textStyle: { color: th.text, fontSize: 12 },
-          formatter: (it: any) => {
-            const [x, y, extra] = it.value as [number, number, any];
-            if (it.seriesIndex === 0) {
-              const b = bins[it.dataIndex];
-              return `<b>${b.t} … ${b.t + 1} °C</b><br/>${t("cmp.tt_bin", { n: b.n, v: fmtNum(b.mean, 2), sd: fmtNum(b.sd, 2), unit })}<br/>${fmtNum(y, 0)} kWh`;
-            }
-            if (it.seriesIndex === 1) return `${fmtNum(x, 1)} °C<br/>${t("cmp.s_line")}: <b>${fmtNum(y, 1)} kWh</b>`;
-            return `<b>${day(extra)}</b><br/>${fmtNum(x, 1)} °C · ${it.seriesName}: <b>${fmtNum(y, 1)} kWh</b>`;
+          ...tipBase(th),
+          formatter: (items: any) => {
+            const list = Array.isArray(items) ? items : [items];
+            const r = rows[list[0]?.dataIndex ?? 0];
+            const mk = (i: number) => list.find((it: any) => it.seriesIndex === i)?.marker ?? "";
+            const out: TipRow[] = [];
+            if (r.bin) out.push([mk(0), t("cmp.s_bins"), `${fmtNum(r.fuelKwh!, 0)} kWh`, t("cmp.tt_bin", { n: r.bin.n, v: fmtNum(r.bin.mean, 2), sd: fmtNum(r.bin.sd, 2), unit })]);
+            out.push([mk(1), t("cmp.s_line"), `${fmtNum(r.useful, 0)} kWh`, t("cmp.tt_useful", { eff: fmtNum(cfg.eff, 0) })]);
+            if (r.el !== undefined) {
+              out.push([mk(hasHeat ? 3 : 2), t("cmp.s_el"), `${fmtNum(r.el, 1)} kWh`, t("cmp.tt_hp_days", { n: r.days.length, days: r.days.map((x) => dm(x.day)).join(", ") })]);
+              // the series marker of a hollow dot is invisible (transparent fill): draw the ring
+              const ring = `<span style="display:inline-block;margin-right:4px;border-radius:50%;width:7px;height:7px;border:1.5px solid ${C_HEAT}"></span>`;
+              if (r.heat !== undefined) out.push([ring, t("cmp.s_heat"), `${fmtNum(r.heat, 0)} kWh`, t("cmp.tt_heat")]);
+              if (r.factor !== undefined) out.push(["", t("cmp.factor_short"), fmtNum(r.factor, 2), t("cmp.tt_factor")]);
+            } else out.push(["", t("cmp.s_el"), "–", t("cmp.tt_no_hp")]);
+            return tipHtml(t("cmp.tt_class", { a: r.c, b: r.c + 1 }), out);
           },
         },
         xAxis: {
-          type: "value",
-          min: tMin,
-          max: tMax,
-          interval: 5,
+          type: "category",
+          data: classes.map(String),
           name: "°C",
           nameTextStyle: { color: th.muted },
-          axisLabel: { color: th.muted },
           axisLine: { lineStyle: { color: th.border } },
-          splitLine: { show: false },
+          axisTick: { show: false },
+          axisLabel: { color: th.muted, interval: (_i: number, v: string) => Number(v) % 5 === 0 },
         },
-        yAxis: {
-          type: "value",
-          name: t("cmp.kwh_day"),
-          min: 0,
-          // keep the axis at the left edge instead of at 0 °C
-          axisLine: { onZero: false },
-          nameTextStyle: { color: th.muted, align: "left" },
-          axisLabel: { color: th.muted },
-          splitLine: { lineStyle: { color: th.border, type: "dashed" } },
-        },
+        yAxis: { type: "value", name: t("cmp.kwh_day"), min: 0, nameTextStyle: { color: th.muted, align: "left" }, axisLabel: { color: th.muted }, splitLine: { lineStyle: { color: th.border, type: "dashed" } } },
         series: [
-          {
-            name: t("cmp.s_bins"),
-            type: "bar",
-            barWidth: "60%",
-            data: bins.map((b) => [b.t + 0.5, Math.round(b.mean * k * 10) / 10]),
-            itemStyle: { color: C_OLD, opacity: 0.32, borderRadius: [3, 3, 0, 0] },
-          },
-          { name: t("cmp.s_line"), type: "line", showSymbol: false, data: line, lineStyle: { color: C_OLD, width: 2.5 }, itemStyle: { color: C_OLD } },
-          ...(d.compare.some((x) => x.heat !== undefined)
-            ? [{
-                name: t("cmp.s_heat"),
-                type: "scatter",
-                symbolSize: 8,
-                data: d.compare.filter((x) => x.heat !== undefined).map((x) => [x.t, Math.round((x.heat as number) * 10) / 10, x.day]),
-                itemStyle: { color: "transparent", borderColor: C_HEAT, borderWidth: 1.5 },
-              }]
+          { name: t("cmp.s_bins"), type: "bar", barCategoryGap: "25%", data: rows.map((r) => r1(r.fuelKwh)), itemStyle: { color: C_OLD, opacity: 0.32, borderRadius: [3, 3, 0, 0] } },
+          { name: t("cmp.s_line"), type: "line", showSymbol: false, data: rows.map((r) => r1(r.useful)), lineStyle: { color: C_OLD, width: 2.5 }, itemStyle: { color: C_OLD } },
+          ...(hasHeat
+            ? [{ name: t("cmp.s_heat"), type: "scatter", symbolSize: 9, data: rows.map((r) => r1(r.heat)), itemStyle: { color: "transparent", borderColor: C_HEAT, borderWidth: 1.5 } }]
             : []),
-          {
-            name: t("cmp.s_el"),
-            type: "scatter",
-            symbolSize: 9,
-            data: d.compare.map((x) => [x.t, Math.round(x.el * 10) / 10, x.day]),
-            itemStyle: { color: C_EL },
-          },
+          { name: t("cmp.s_el"), type: "scatter", symbolSize: 10, data: rows.map((r) => r1(r.el)), itemStyle: { color: C_EL } },
         ],
       });
     }
@@ -233,31 +263,28 @@ export class CpCompare extends LitElement {
       this._keyD = key;
       const locale = getLang() === "de" ? "de-DE" : "en-GB";
       const label = (ms: number) => new Date(ms).toLocaleDateString(locale, { day: "2-digit", month: "2-digit" });
+      const unit = this._unit();
       this._optD = (th: ChartTheme): ChartOption => ({
         animationDuration: 400,
         textStyle: { fontFamily: "inherit" },
         grid: { left: 8, right: 8, top: 50, bottom: 8, containLabel: true },
         legend: { top: 0, right: 0, itemWidth: 12, itemHeight: 12, textStyle: { color: th.muted }, inactiveColor: th.border },
         tooltip: {
-          trigger: "axis",
-          axisPointer: { type: "shadow", shadowStyle: { color: "rgba(127,127,127,0.12)" } },
-          backgroundColor: th.surface,
-          borderColor: th.border,
-          textStyle: { color: th.text, fontSize: 12 },
+          ...tipBase(th),
           formatter: (items: any) => {
             const list = Array.isArray(items) ? items : [items];
             const x = days[list[0]?.dataIndex ?? 0];
-            const rows = [
-              [t("cmp.tt_temp"), `${fmtNum(x.t, 1)} °C`],
-              [t("cmp.s_el"), `${fmtNum(x.el, 1)} kWh`],
-              [t("cmp.old_useful"), `${fmtNum(x.useful, 0)} kWh`],
-              [t("cmp.factor_short"), fmtNum(x.factor, 2)],
-              [t("cmp.cost_hp"), `${fmtNum(x.costHp, 2)} €`],
-              [t("cmp.cost_old"), `${fmtNum(x.costOld, 2)} €`],
-            ];
-            return `<div style="margin-bottom:4px;font-weight:700">${new Date(x.day).toLocaleDateString(locale, { weekday: "short", day: "2-digit", month: "2-digit" })}</div>${rows
-              .map(([k, v]) => `<div style="display:flex;gap:12px;justify-content:space-between"><span>${k}</span><b>${v}</b></div>`)
-              .join("")}`;
+            const mk = (i: number) => list.find((it: any) => it.seriesIndex === i)?.marker ?? "";
+            const verdict = !Number.isFinite(x.factor) ? "" : x.factor >= be ? t("cmp.tt_cheaper", { v: fmtNum(x.costOld - x.costHp, 2) }) : t("cmp.tt_dearer", { v: fmtNum(x.costHp - x.costOld, 2) });
+            const title = `${new Date(x.day).toLocaleDateString(locale, { weekday: "short", day: "2-digit", month: "2-digit" })} · ${fmtNum(x.t, 1)} °C`;
+            return tipHtml(title, [
+              [mk(0), t("cmp.old_useful"), `${fmtNum(x.useful, 0)} kWh`, t("cmp.tt_day_useful", { fuel: fmtNum(x.fuel, 1), unit })],
+              [mk(1), t("cmp.s_el"), `${fmtNum(x.el, 1)} kWh`, t("cmp.tt_day_el")],
+              [mk(2), t("cmp.factor_short"), fmtNum(x.factor, 2), t("cmp.tt_factor")],
+              [mk(3), t("cmp.break_even_line"), fmtNum(be, 2), t("cmp.tt_break_even")],
+              ["", t("cmp.cost_hp"), `${fmtNum(x.costHp, 2)} €`, t("cmp.tt_cost_hp", { p: fmtNum(x.price * 100, 1) })],
+              ["", t("cmp.cost_old"), `${fmtNum(x.costOld, 2)} €`, verdict],
+            ]);
           },
         },
         dataZoom: [{ type: "inside", minValueSpan: 5 }],
@@ -277,37 +304,18 @@ export class CpCompare extends LitElement {
             symbol: "circle",
             symbolSize: 7,
             lineStyle: { color: th.text, width: 1.5, type: "dashed", opacity: 0.7 },
+            itemStyle: { color: th.text },
             data: days.map((x) => (Number.isFinite(x.factor) ? { value: Math.round(x.factor * 100) / 100, itemStyle: { color: factorColor(x.factor, be) } } : null)),
           },
-          // own series (no data points) so the break-even line has a legend entry and can be switched off
+          // a flat line on the factor axis; own series so it has a legend entry and a row in the tooltip
           {
             name: t("cmp.break_even_line"),
             type: "line",
             yAxisIndex: 1,
-            data: days.map(() => null),
+            data: days.map(() => Math.round(be * 100) / 100),
             symbol: "none",
-            lineStyle: { color: AMPEL_COLOR.yellow, type: "dashed", width: 1.5 },
+            lineStyle: { color: AMPEL_COLOR.yellow, type: "dashed", width: 1.5, opacity: 0.85 },
             itemStyle: { color: AMPEL_COLOR.yellow },
-            markLine: {
-              silent: true,
-              symbol: "none",
-              lineStyle: { color: AMPEL_COLOR.yellow, type: "dashed", width: 1.5, opacity: 0.85 },
-              label: {
-                show: true,
-                position: "insideStartTop",
-                formatter: t("cmp.break_even_label", { v: fmtNum(be, 2) }),
-                color: th.text,
-                fontSize: 11,
-                fontWeight: 600,
-                // readable on top of the bars in both themes
-                backgroundColor: th.surface,
-                borderColor: AMPEL_COLOR.yellow,
-                borderWidth: 1,
-                borderRadius: 4,
-                padding: [2, 6],
-              },
-              data: [{ yAxis: Math.round(be * 100) / 100 }],
-            },
           },
         ],
       });
@@ -315,6 +323,7 @@ export class CpCompare extends LitElement {
     return html`<div class="card chart">
       <div class="cap">${t("cmp.chart_d")}</div>
       <cp-echart .option=${this._optD}></cp-echart>
+      <p class="muted small">${t("cmp.chart_d_hint", { be: fmtNum(be, 2) })}</p>
     </div>`;
   }
 
