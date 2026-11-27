@@ -278,7 +278,36 @@ export class CpCompare extends LitElement {
             symbolSize: 7,
             lineStyle: { color: th.text, width: 1.5, type: "dashed", opacity: 0.7 },
             data: days.map((x) => (Number.isFinite(x.factor) ? { value: Math.round(x.factor * 100) / 100, itemStyle: { color: factorColor(x.factor, be) } } : null)),
-            markLine: { silent: true, symbol: "none", label: { show: false }, lineStyle: { color: AMPEL_COLOR.yellow, type: "dotted", opacity: 0.7 }, data: [{ yAxis: Math.round(be * 100) / 100 }] },
+          },
+          // own series (no data points) so the break-even line has a legend entry and can be switched off
+          {
+            name: t("cmp.break_even_line"),
+            type: "line",
+            yAxisIndex: 1,
+            data: days.map(() => null),
+            symbol: "none",
+            lineStyle: { color: AMPEL_COLOR.yellow, type: "dashed", width: 1.5 },
+            itemStyle: { color: AMPEL_COLOR.yellow },
+            markLine: {
+              silent: true,
+              symbol: "none",
+              lineStyle: { color: AMPEL_COLOR.yellow, type: "dashed", width: 1.5, opacity: 0.85 },
+              label: {
+                show: true,
+                position: "insideStartTop",
+                formatter: t("cmp.break_even_label", { v: fmtNum(be, 2) }),
+                color: th.text,
+                fontSize: 11,
+                fontWeight: 600,
+                // readable on top of the bars in both themes
+                backgroundColor: th.surface,
+                borderColor: AMPEL_COLOR.yellow,
+                borderWidth: 1,
+                borderRadius: 4,
+                padding: [2, 6],
+              },
+              data: [{ yAxis: Math.round(be * 100) / 100 }],
+            },
           },
         ],
       });

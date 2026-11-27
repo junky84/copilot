@@ -1,4 +1,4 @@
-import { i as m0, b as _0, a as S0 } from "./panel-Cy2paeAQ.js";
+import { i as m0, b as _0, a as S0 } from "./panel-PFYA_Sdk.js";
 /*! *****************************************************************************
 Copyright (c) Microsoft Corporation.
 
