@@ -2,6 +2,7 @@ import { LitElement, css, html, nothing, svg } from "lit";
 // ECharts is large: loaded on demand as a separate chunk, only when this view is opened
 import type { ChartOption, ChartTheme } from "./echart";
 import { loadCostDays, sumCosts, type CostDay, type CostTotals } from "../data/costs";
+import { loadBaseline, simBaseline } from "../data/baseline";
 import { fmtNum, getLang, t } from "../i18n";
 import { ui } from "../styles";
 import type { Hass, Plant } from "../types";
@@ -79,9 +80,23 @@ export class CpEfficiency extends LitElement {
       if (this.sim) this._data = simEfficiency(this.sim);
       else if (this.hass && !this.hass.__standalone) this._data = await hassEfficiency(this.hass, this.plant);
       const daily = (this._data?.daily || []).slice(-30);
-      this._costs = await loadCostDays(daily, this.plant, this.sim, this.hass && !this.hass.__standalone ? this.hass : undefined);
+      const live = this.hass && !this.hass.__standalone ? this.hass : undefined;
+      this._costs = await loadCostDays(daily, this.plant, this.sim, live, await this._oldCost(live));
     } catch (err: any) {
       this._error = err?.message || String(err);
+    }
+  }
+
+  /** Old heating's cost per day from the before / after heating line, when set up. */
+  private async _oldCost(live?: Hass): Promise<Map<number, number> | undefined> {
+    try {
+      const b = this.sim ? simBaseline(this.sim, this.plant) : live && this.plant.settings.baseline?.enabled ? await loadBaseline(live, this.plant) : undefined;
+      if (!b?.fit || !b.compare.length) return undefined;
+      // demo: yesterday and today come from the running simulator, not from the synthetic days of the comparison
+      const lastSynthetic = this.sim ? new Date(this.sim.time * 1000).setHours(0, 0, 0, 0) - 86400_000 : Infinity;
+      return new Map(b.compare.filter((d) => d.day < lastSynthetic).map((d) => [d.day, d.costOld]));
+    } catch {
+      return undefined;
     }
   }
 
@@ -253,7 +268,7 @@ export class CpEfficiency extends LitElement {
       <div class="kv"><span>${t("cost.pv_share")}</span><b>${share !== undefined ? fmtNum(share * 100, 0) + " %" : "–"}</b></div>
       <div class="kv"><span>${t("cost.feed_loss")}</span><b>${c && !c.noShare ? eur(c.feedLoss) : "–"}</b></div>
       <div class="kv"><span>${t("cost.per_kwh")}</span><b>${perKwh !== undefined ? fmtNum(perKwh * 100, 1) + " ct" : "–"}</b></div>
-      <div class="kv"><span>${t("cost.vs_gas")}</span><b class=${saving !== undefined && saving >= 0 ? "good" : ""}>${c ? eur(c.gas) : "–"}${saving !== undefined ? html` <small>(${saving >= 0 ? "−" : "+"}${fmtNum(Math.abs(saving) * 100, 0)} %)</small>` : nothing}</b></div>
+      <div class="kv"><span>${t(c?.gasBaseline ? "cost.vs_old" : "cost.vs_gas")}</span><b class=${saving !== undefined && saving >= 0 ? "good" : ""}>${c ? eur(c.gas) : "–"}${saving !== undefined ? html` <small>(${saving >= 0 ? "−" : "+"}${fmtNum(Math.abs(saving) * 100, 0)} %)</small>` : nothing}</b></div>
     </div>`;
   }
 

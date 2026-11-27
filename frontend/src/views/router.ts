@@ -5,19 +5,21 @@ import type { PlantController } from "../controller";
 import type { Hass, Plant } from "../types";
 import "./overview";
 import "./efficiency";
+import "./compare";
 import "./check";
 import "./curve";
 import "./maintenance";
 import "./widgets";
 
-export type View = "overview" | "efficiency" | "check" | "curve" | "maintenance" | "messages" | "config";
+export type View = "overview" | "efficiency" | "compare" | "check" | "curve" | "maintenance" | "messages" | "config";
 /** views the Lovelace card can show (configuration stays in the panel) */
-export const CARD_VIEWS: View[] = ["overview", "efficiency", "check", "curve", "maintenance", "messages"];
+export const CARD_VIEWS: View[] = ["overview", "efficiency", "compare", "check", "curve", "maintenance", "messages"];
 export const ALL_VIEWS: View[] = [...CARD_VIEWS, "config"];
 
 export const VIEW_ICON: Record<View, string> = {
   overview: "grid",
   efficiency: "chart",
+  compare: "scale",
   check: "check",
   curve: "curve",
   maintenance: "wrench",
@@ -61,6 +63,8 @@ export function renderView(view: View, plant: Plant, c: ViewContext): TemplateRe
     }
     case "efficiency":
       return html`<cp-efficiency .plant=${plant} .src=${src} .hass=${c.hass} .sim=${ctl.sim} .version=${ctl.version}></cp-efficiency>`;
+    case "compare":
+      return html`<cp-compare .plant=${plant} .hass=${c.hass} .sim=${ctl.sim} .version=${ctl.version}></cp-compare>`;
     case "check":
       return html`<cp-check .plant=${plant} .src=${src} .sim=${ctl.sim} .version=${ctl.version}></cp-check>`;
     case "curve":

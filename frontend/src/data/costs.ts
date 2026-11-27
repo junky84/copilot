@@ -37,6 +37,8 @@ export interface CostDay {
   feedLoss: number;
   /** what the same heat would have cost with gas/oil, € */
   gas: number;
+  /** `gas` comes from the old boiler's heating line (before / after), not from the heat pump's heat */
+  gasBaseline: boolean;
   /** share of PV/battery is a model estimate */
   estimated: boolean;
   /** PV share unknown (no energy layer data) */
@@ -51,6 +53,7 @@ export interface CostTotals {
   cost: number;
   feedLoss: number;
   gas: number;
+  gasBaseline: boolean;
   estimated: boolean;
   noShare: boolean;
 }
@@ -140,7 +143,15 @@ function simHours(sim: Simulator): HourMap {
 }
 
 /** Combine the daily energy with the hourly split and the tariff. */
-export function costDays(daily: DayEnergy[], hours: HourMap, share: boolean, plant: Plant, demo: boolean): CostDay[] {
+export function costDays(
+  daily: DayEnergy[],
+  hours: HourMap,
+  share: boolean,
+  plant: Plant,
+  demo: boolean,
+  /** cost of the old heating per day from the before / after heating line (day → €) */
+  oldCost?: Map<number, number>,
+): CostDay[] {
   const tariff = tariffOf(plant);
   const byDay = new Map<number, { hp: number; grid: number; priced: number; gridForPrice: number }>();
   for (const [t, h] of hours) {
@@ -167,6 +178,7 @@ export function costDays(daily: DayEnergy[], hours: HourMap, share: boolean, pla
     const price = d && d.gridForPrice > 0.01 ? d.priced / d.gridForPrice : tariff.price;
     const grid = e.el * gridShare;
     const self = e.el - grid;
+    const old = oldCost?.get(e.day);
     return {
       day: e.day,
       el: e.el,
@@ -175,24 +187,31 @@ export function costDays(daily: DayEnergy[], hours: HourMap, share: boolean, pla
       heat: e.heat,
       cost: grid * price,
       feedLoss: self * tariff.feed_in,
-      gas: (e.heat / Math.max(0.5, tariff.gas_eff / 100)) * tariff.gas_price,
+      gas: old ?? (e.heat / Math.max(0.5, tariff.gas_eff / 100)) * tariff.gas_price,
+      gasBaseline: old !== undefined,
       estimated,
       noShare: !share && !demo,
     };
   });
 }
 
-export async function loadCostDays(daily: DayEnergy[], plant: Plant, sim: Simulator | null, hass?: Hass): Promise<CostDay[]> {
+export async function loadCostDays(
+  daily: DayEnergy[],
+  plant: Plant,
+  sim: Simulator | null,
+  hass?: Hass,
+  oldCost?: Map<number, number>,
+): Promise<CostDay[]> {
   if (!daily.length) return [];
-  if (sim) return costDays(daily, simHours(sim), true, plant, true);
-  if (!hass) return costDays(daily, new Map(), false, plant, false);
+  if (sim) return costDays(daily, simHours(sim), true, plant, true, oldCost);
+  if (!hass) return costDays(daily, new Map(), false, plant, false, oldCost);
   const { hours, share } = await hassHours(hass, plant, 31);
-  return costDays(daily, hours, share, plant, false);
+  return costDays(daily, hours, share, plant, false, oldCost);
 }
 
 export function sumCosts(days: CostDay[]): CostTotals | null {
   if (!days.length) return null;
-  const z: CostTotals = { el: 0, grid: 0, self: 0, heat: 0, cost: 0, feedLoss: 0, gas: 0, estimated: false, noShare: false };
+  const z: CostTotals = { el: 0, grid: 0, self: 0, heat: 0, cost: 0, feedLoss: 0, gas: 0, gasBaseline: days.some((d) => d.gasBaseline), estimated: false, noShare: false };
   for (const d of days) {
     z.el += d.el;
     z.grid += d.grid;

@@ -100,6 +100,32 @@ export interface TariffConfig {
   gas_eff?: number;
 }
 
+/** Before / after: the old boiler's meter as a reference for the heat pump (see data/baseline.ts). */
+export interface BaselineConfig {
+  enabled?: boolean;
+  /** meter of the old heating (gas m³ or kWh, oil litres) with long-term statistics */
+  meter?: string;
+  unit?: "m3" | "kwh" | "l";
+  /** energy per meter unit in kWh (gas: gross calorific value × z-number, about 10–11) */
+  kwh_per_unit?: number;
+  /** efficiency of the old boiler in % (relative to the energy above) */
+  eff?: number;
+  /** price per meter unit, € */
+  price?: number;
+  /** CO₂ per kWh fuel, kg */
+  co2_per_kwh?: number;
+  /** outdoor temperature with statistics reaching back before the switch-over (default: heat pump sensor) */
+  outdoor?: string;
+  /** first day of the heat pump (ISO date); the meter is read up to this day */
+  switch_date?: string;
+  /** read the meter from this day on (ISO date), e.g. after insulation work */
+  from?: string;
+  /** without meter history: yearly consumption in the meter unit */
+  annual?: number;
+  /** heating limit for the yearly consumption, °C */
+  heating_limit?: number;
+}
+
 export interface MaintenanceTask {
   id: string;
   /** preset key (texts mt.<key>); custom tasks carry a title instead */
@@ -134,6 +160,8 @@ export interface PlantSettings {
   /** heat load at design temperature in kW (simulator) */
   heat_load?: number;
   tariff?: TariffConfig;
+  /** before / after comparison with the old heating */
+  baseline?: BaselineConfig;
   building?: BuildingConfig;
   maintenance?: { tasks: MaintenanceTask[] };
   /** energy layer (PV, grid, battery, house, wallbox) */

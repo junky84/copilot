@@ -5,6 +5,7 @@ import { icon, ui } from "../styles";
 import type { ComponentType, EnergyConfig, Hass, Plant, UserIcon } from "../types";
 import { suggestEnergy } from "../data/energy";
 import { tariffOf } from "../data/costs";
+import { UNIT_DEFAULTS, baselineOf, type FuelUnit } from "../data/baseline";
 import "./editor";
 import { exampleConfig, generatePlant, type WizardConfig } from "../templates";
 import type { Api, Backup, ScanResult } from "../api";
@@ -418,6 +419,7 @@ export class CpSettings extends LitElement {
     _note: { state: true },
     _backups: { state: true },
     _tariff: { state: true },
+    _baseline: { state: true },
     _bmsg: { state: true },
   };
   plant!: Plant;
@@ -426,6 +428,64 @@ export class CpSettings extends LitElement {
   api?: Api;
   private _backups: Backup[] | null = null;
   private _tariff: Partial<import("../types").TariffConfig> | null = null;
+  private _baseline: Partial<import("../types").BaselineConfig> | null = null;
+
+  private _baselineSection() {
+    const stored = this.plant.settings.baseline || {};
+    const draft = { ...stored, ...(this._baseline || {}) };
+    const b = baselineOf({ ...this.plant, settings: { ...this.plant.settings, baseline: draft } });
+    const set = (patch: Partial<import("../types").BaselineConfig>) => (this._baseline = { ...(this._baseline || {}), ...patch });
+    const num = (key: "kwh_per_unit" | "eff" | "price" | "co2_per_kwh" | "annual" | "heating_limit", label: string, step: string, value?: number) =>
+      html`<label class="field">${label}<input type="number" step=${step} min="0" .value=${value === undefined ? "" : String(value)}
+        @change=${(e: Event) => {
+          const v = (e.target as HTMLInputElement).value;
+          set({ [key]: v === "" ? undefined : Number(v) });
+        }} /></label>`;
+    const date = (key: "switch_date" | "from", label: string) =>
+      html`<label class="field">${label}<input type="date" .value=${(draft[key] as string) || ""}
+        @change=${(e: Event) => set({ [key]: (e.target as HTMLInputElement).value || undefined })} /></label>`;
+    const unitLabel = t(`cmp.unit.${b.unit}`);
+    return html`<div class="card wrap">
+      <h2>${t("st.baseline")}</h2>
+      <p class="muted">${t("st.baseline_hint")}</p>
+      <label class="check"><input type="checkbox" .checked=${!!draft.enabled}
+        @change=${(e: Event) => set({ enabled: (e.target as HTMLInputElement).checked })} />${t("st.b_enabled")}</label>
+      <div class="grid2">
+        <label class="field">${t("st.b_meter")}
+          <cp-entity-picker .hass=${this.hass} .value=${draft.meter || ""} @value-changed=${(e: CustomEvent) => set({ meter: e.detail || undefined })}></cp-entity-picker></label>
+        <label class="field">${t("st.b_unit")}
+          <select @change=${(e: Event) => {
+            const unit = (e.target as HTMLSelectElement).value as FuelUnit;
+            const d = UNIT_DEFAULTS[unit];
+            // switching the unit resets the unit-dependent numbers to that unit's defaults
+            set({ unit, kwh_per_unit: d.kwh, price: d.price, co2_per_kwh: d.co2 });
+          }}>
+            ${(["m3", "kwh", "l"] as const).map((u) => html`<option value=${u} ?selected=${b.unit === u}>${t(`st.b_unit.${u}`)}</option>`)}
+          </select></label>
+        ${date("switch_date", t("st.b_switch"))}
+        ${date("from", t("st.b_from"))}
+        <label class="field">${t("st.b_outdoor")}
+          <cp-entity-picker .hass=${this.hass} .value=${draft.outdoor || ""} @value-changed=${(e: CustomEvent) => set({ outdoor: e.detail || undefined })}></cp-entity-picker></label>
+        ${num("kwh_per_unit", t("st.b_kwh", { unit: unitLabel }), "0.01", b.kwh_per_unit)}
+        ${num("eff", t("st.b_eff"), "1", b.eff)}
+        ${num("price", t("st.b_price", { unit: unitLabel }), "0.001", b.price)}
+        ${num("co2_per_kwh", t("st.b_co2"), "0.001", b.co2_per_kwh)}
+      </div>
+      <details>
+        <summary>${t("st.b_annual_title")}</summary>
+        <p class="muted">${t("st.b_annual_hint")}</p>
+        <div class="grid2">
+          ${num("annual", t("st.b_annual", { unit: unitLabel }), "1", draft.annual)}
+          ${num("heating_limit", t("st.b_limit"), "0.5", b.heating_limit)}
+        </div>
+      </details>
+      <div class="row"><span class="spacer"></span>
+        <button class="primary" ?disabled=${!this._baseline} @click=${() => {
+          this._patch({ baseline: { ...stored, ...this._baseline } });
+          this._baseline = null;
+        }}>${icon("save")} ${t("st.save")}</button></div>
+    </div>`;
+  }
 
   private _tariffSection() {
     const tf = { ...tariffOf(this.plant), ...(this._tariff || {}) };
@@ -631,6 +691,7 @@ export class CpSettings extends LitElement {
     </div>
     ${this._energySection()}
     ${this._tariffSection()}
+    ${this._baselineSection()}
     ${this._backupSection()}`;
   }
 
@@ -638,6 +699,8 @@ export class CpSettings extends LitElement {
     ui,
     css`
       .wrap { max-width: 640px; display: grid; gap: 16px; }
+      details summary { cursor: pointer; font-size: 14px; font-weight: 600; }
+      details[open] summary { margin-bottom: 8px; }
       .toggle { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; }
       .toggle input { margin-top: 4px; }
       .foot { margin-top: 8px; }

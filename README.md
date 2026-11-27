@@ -23,6 +23,7 @@ Built first for Buderus/Bosch heat pumps read via an **EMS-ESP gateway** (BBQKee
 - **2.5D style** (*Configuration → Settings → Style*): components with depth and soft shadows, tube-like pipes and an isometric floor – same layout, values and interaction as the flat style
 - **Interactive charts** (Apache ECharts, as used by Home Assistant itself): tooltips, zoom, series toggled via the legend
 - **Costs & PV share** (efficiency tab): grid cost of the heat pump per day / 30 days, share covered by PV or battery (hour by hour from the energy layer), feed-in revenue given up, cost per kWh of heat and comparison with a gas boiler; fixed price or a price entity (dynamic tariffs)
+- **Before / after** (scale tab): reads the old gas or oil boiler's meter and the outdoor temperature from the Home Assistant statistics up to the switch-over, drops days with broken sensors (frozen temperature, meter outages, catch-up bookings) and fits a heating line – fuel per day by outdoor temperature, heating limit and hot-water base load. Every heat pump day is set against what the old boiler would have needed at the same temperature: a performance factor that does not rely on the heat pump's own (often modelled) heat meter, costs of both, CO₂, cost break-even and a plausibility check of the reported heat. Without meter history a yearly consumption is enough for an estimate. Once set up, the cost comparison in the efficiency tab uses this line as well
 - **Heating curve coach** (heating curve tab): guides you step by step – over days or weeks – to the lowest curve that still keeps the reference room at your desired temperature. Checklist (valves open, no setback), a settling day after every change, then at least 36 heating hours on 2 days; hours with a stove/open window (optional entity) or sudden room temperature jumps are ignored. It compares mild and cold weather to decide between a parallel shift and a steeper/flatter curve, suggests exactly one small change per round (applied directly or confirmed as “set at the controller”), keeps a log and sends a message when the next evaluation is ready. Hover a measurement to see its hour, room temperature and whether it was disturbed
 - **Maintenance calendar** (wrench tab): recurring tasks suggested from your components (system pressure, particle filter SC1, dirt separator, expansion vessel, outdoor unit, DHW anode, professional service) plus your own; due tasks become messages and fire `copilot_message` for push notifications
 - **Write access for selected values**: release single values with ✎ in the editor (e.g. DHW setpoint, one-time charge, operating mode – any number / select / switch / button entity). Change them from the value popover with a confirmation step; the backend only accepts released values within the entity limits and logs every change under messages. Admins only, unless allowed for all users in the settings
@@ -42,6 +43,10 @@ All screenshots show the built-in demo mode with the physics simulator.
 | ![2.5D style](https://raw.githubusercontent.com/junky84/copilot/main/docs/images/iso-light.png) | ![Explain mode](https://raw.githubusercontent.com/junky84/copilot/main/docs/images/explain.png) |
 | **Efficiency: COP, SPF and daily energy** | **Interactive heating curve** |
 | ![Efficiency view](https://raw.githubusercontent.com/junky84/copilot/main/docs/images/efficiency.png) | ![Heating curve](https://raw.githubusercontent.com/junky84/copilot/main/docs/images/curve.png) |
+
+**Before / after: old gas boiler vs. heat pump**
+
+![Before / after view](https://raw.githubusercontent.com/junky84/copilot/main/docs/images/compare.png)
 
 <p align="center"><img src="https://raw.githubusercontent.com/junky84/copilot/main/docs/images/mobile.png" alt="Phone layout" width="300"></p>
 
@@ -86,7 +91,7 @@ cards:
     show_demo_controls: false  # demo speed / scenarios
     # height: 600px            # optional; panel views fill the screen
     # views: [overview, curve, efficiency]  # menu of the card (default: overview only);
-    #                          # also check, maintenance, messages – the configuration stays in the panel
+    #                          # also compare, check, maintenance, messages – the configuration stays in the panel
     # back_after: 120          # seconds without touch → back to the first entry (wall displays)
 ```
 
